@@ -1,0 +1,16 @@
+{
+  "artifactHash": "9805d22f0395ebac67d0824f3687e2568675bb148fb0a08fe7ecd05fd92d9bdb",
+  "artifactSchemaVersion": 2,
+  "canonicalByteLength": 26488,
+  "compilerConfigVersion": 1,
+  "compilerVersion": "1.1.0",
+  "counts": {
+    "controllers": 2,
+    "entities": 37,
+    "relationships": 44
+  },
+  "economySeedPlanHash": "4d38443acb4a2c64437e6c8e4cfd1bf7369df16b896d611f881d2259c92a6743",
+  "inputHash": "a884959c103e9697ecc8da585a3b2149b8b697a7c3245160d45ce5210e08e888",
+  "manifestContentHash": "c3074930cc920b840e1ad5e1a8d338c621476771f2aa57e0e5c47d9904760174",
+  "worldGraphSchemaVersion": 1
+}

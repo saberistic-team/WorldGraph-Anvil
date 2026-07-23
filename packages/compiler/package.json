@@ -1,0 +1,27 @@
+{
+  "name": "@worldgraph/compiler",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "worldgraph": "./dist/cli.js"
+  },
+  "exports": {
+    ".": "./src/index.ts",
+    "./cli": "./src/cli.ts"
+  },
+  "scripts": {
+    "build": "tsup",
+    "clean": "rm -rf dist",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@worldgraph/catalog": "workspace:*",
+    "@worldgraph/contracts": "workspace:*",
+    "@worldgraph/economy": "workspace:*",
+    "@worldgraph/manifests": "workspace:*"
+  },
+  "devDependencies": {
+    "tsup": "catalog:"
+  }
+}

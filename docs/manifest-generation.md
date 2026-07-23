@@ -1,0 +1,41 @@
+# Manifest generation, privacy, and recovery
+
+Manifest generation is asynchronous and PostgreSQL-authoritative. Redis/BullMQ carries only a versioned wake containing the durable run UUID, base request hash, generator/template/validator versions, and provider configuration ID. It contains no prompt, world ID, user ID, manifest, or authority decision. Lost or duplicate wakes are recovered by database reconciliation.
+
+## Deterministic inputs
+
+The API normalizes the creator prompt, resolves an omitted seed deterministically from the normalized prompt plus fixed generator/template/provider configuration, and stores that explicit seed. A base request hash covers those values plus the optional parent revision/hash pair. The worker freezes exact ranked primitive rows and dependency/content hashes, computes a catalog snapshot hash, then computes a resolved input hash over the base semantic inputs plus that frozen catalog. Both hashes become immutable.
+
+Generation output is `ManifestGenerationEnvelopeV1`: strict Manifest v1, the same authoritative assumptions array, unresolved questions, warnings, suggested structured fixes, and per-field provenance. Unknown keys, actions, tool calls, executable content, remote references, arbitrary URLs, unpinned primitives, false provenance, or schema-invalid output fail local validation.
+
+## Provider and fallback behavior
+
+The provider port has no database, command, tool, URL-fetch, filesystem, or network capability supplied by WorldGraph. Requests contain a system-authored task, strict local schema, delimited untrusted prompt/primitive summaries, exact pins, and prior structured diagnostics only for repair. At most two bounded repair calls and two transient retries are allowed across the durable run, including a worker retry after publication failure. Timeout, output tokens, daily cost, independent per-world/per-requester concurrency, circuit breaking, cancellation, and feature configuration are enforced outside provider output. The locked world row serializes each world's count-and-create decision; a transaction-scoped requester advisory lock independently serializes the cross-world requester count.
+
+Every attempted provider generate/repair call first creates a PostgreSQL reservation tied to the active run claim, attempt, provider configuration, model, UTC usage date, and bounded cost/token ceilings. A global UTC-date advisory lock serializes the aggregate daily-budget decision across workers and runs. Successful calls settle exact usage without exceeding the reservation; a definitely unmade call releases it. If the worker cannot know whether an external call occurred, the reservation remains conservatively charged. Provider-call count, repair count, tokens, and cost are cumulative across worker attempts and are reloaded before retry, so a crash or failed publication cannot reset a budget or repair allowance.
+
+The current production provider configuration is `disabled-v1`. A schema-faithful fake verifies the adapter/parser/repair/circuit/accounting contract; optional live-provider tests are unavailable because no live provider is configured. Provider-disabled, unavailable, invalid, timed-out, or over-budget execution selects the real deterministic city-state fallback. It creates a useful two-district guild/council/credit/energy manifest from exact starter primitives and records fallback limitations/provenance. Identical normalized prompt, explicit seed, exact catalog, parent scope, versions, and configuration produce identical canonical manifest bytes and content hash.
+
+## Durable execution and cancellation
+
+Workers claim queued rows with a UUID lease token, attempt, stage, timestamps, and row version. Every stage/heartbeat/retrieval/provider reservation or settlement/final write checks the same claim. An expired lease is safely requeued with retained retrieval, provider-call accounting, and repair usage or terminally failed after three attempts. Completion atomically inserts at most one generated revision, report, provenance, links the run output, and releases the lease. Cancellation compare-and-sets queued/running to cancelled and invalidates the lease: cancel-first means a late provider result cannot settle or publish; completion-first makes cancellation a terminal conflict.
+
+Run status is durable across refresh and exposes only safe stage/progress, provider/fallback mode, bounded review metadata, exact hashes, worker attempts, cumulative provider-call/repair counts, effective token/cost usage, timestamps, and stable error code. Raw prompts, provider payloads, stack traces, and provider error text do not enter responses, logs, metrics, traces, queue messages, or audit metadata.
+
+## Prompt retention
+
+Prompt text is access-restricted in PostgreSQL rather than application-encrypted. Only the application/worker role required for generation can read it; no read API returns it. The default retention is 30 days (`MANIFEST_PROMPT_RETENTION_DAYS`, allowed 1–365). Cleanup nulls prompt text in bounded batches only after `retention_until`; a trigger makes this a one-way erasure and rejects early erasure, restoration, identity/hash changes, or deletion. Normalized hashes, seed, exact retrieval/provenance, approved canonical content, and audit identity remain because they are required for integrity/replay. Environments needing encryption at rest must use managed database/disk encryption and key controls.
+
+## Operator runbook
+
+- **Disable generation:** set `MANIFEST_GENERATION_ENABLED=false` for new requests. Existing durable runs remain inspectable. Provider selection is independently `MANIFEST_GENERATION_PROVIDER=disabled`; fallback remains the supported execution path.
+- **Stuck run:** inspect safe status/stage/attempt/heartbeat and worker readiness. Do not edit the manifest or fabricate completion. Restart the worker; reconciliation reclaims an expired lease. Cancel through the authenticated command if the creator/administrator wants no output.
+- **Queue loss:** restore Redis and verify worker readiness. Do not recreate database rows. Reconciliation wakes every due PostgreSQL run.
+- **Provider incident:** keep provider disabled; the circuit and deterministic fallback prevent provider authority. Inspect only stable codes/counters, never copy raw prompts/payloads to tickets.
+- **Budget/accounting anomaly:** compare the run's safe cumulative counters with its append-only provider-call reservations. Release only a reservation proven not to have made a call; an uncertain call remains charged. Never lower settled usage, fabricate a settlement, or reset counters to force a retry.
+- **Replay:** use the retained run, explicit seed, exact retrieval items/catalog hash, schema/template/provider configuration, and resolved input hash. Replay may create only a new child through the normal command; never modify an existing revision.
+- **Compromised draft:** cancel active runs, create a corrected child, and leave the compromised immutable draft unapproved. If already approved, supersede only by approving a new valid latest child.
+- **Inconsistent approved pointer:** stop writes; verify one approved revision belongs to the world and has a current valid report, then apply an owner-reviewed forward repair transaction that ends with pointer/schema/status consistency. Never edit canonical content or disable triggers.
+- **Prompt deletion request:** run bounded retention cleanup after the permitted date and verify `prompt_text IS NULL` plus `redacted_at`; do not delete provenance hashes or approved content.
+
+Configuration defaults are generation enabled, one concurrent run per world, two concurrent runs per requester across all worlds, 4,096 output tokens, 8-second provider timeout, 2-second reconciliation, 30-day prompt retention, provider disabled, and zero provider daily budget. `MANIFEST_GENERATION_MAX_CONCURRENT_PER_WORLD` is bounded 1–3 and `MANIFEST_GENERATION_MAX_CONCURRENT_PER_USER` is bounded 1–10. Enabling a real/paid provider additionally requires a trusted versioned database-side provider/budget authority and narrower worker capability, plus privacy, security, cost, contract, and operational review; the current caller-supplied future-provider ceiling is not an enablement boundary.

@@ -1,0 +1,90 @@
+{
+  "version": "7",
+  "dialect": "postgresql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 1784635200000,
+      "tag": "0001_platform_extensions",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1784635260000,
+      "tag": "0002_platform_metadata",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1784635320000,
+      "tag": "0003_identity_authority",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1784635380000,
+      "tag": "0004_primitive_registry",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1784635440000,
+      "tag": "0005_manifest_studio",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1784635500000,
+      "tag": "0006_deterministic_compiler",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1784635560000,
+      "tag": "0007_command_event_ledger",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1784635620000,
+      "tag": "0008_deterministic_clock_scheduler",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1784635680000,
+      "tag": "0009_wallets_transfers_ownership",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1784635740000,
+      "tag": "0010_production_business_market_tax",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1784635800000,
+      "tag": "0011_commerce_projection_repair",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1784635860000,
+      "tag": "0012_commerce_reconciliation_integrity",
+      "breakpoints": true
+    }
+  ]
+}

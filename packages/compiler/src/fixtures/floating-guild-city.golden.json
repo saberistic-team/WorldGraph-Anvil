@@ -1,0 +1,14 @@
+{
+  "artifactHash": "4ef1761d87fdeb868a79e457333942bb18d0ed3fab26035dab9676f54d6e529d",
+  "canonicalByteLength": 23249,
+  "compilerConfigVersion": 1,
+  "compilerVersion": "1.0.0",
+  "counts": {
+    "controllers": 1,
+    "entities": 35,
+    "relationships": 40
+  },
+  "inputHash": "47710bce54a581f601e76d3b246b644153d9a33a4658947ef2445823e299d639",
+  "manifestContentHash": "c3074930cc920b840e1ad5e1a8d338c621476771f2aa57e0e5c47d9904760174",
+  "worldGraphSchemaVersion": 1
+}

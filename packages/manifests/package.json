@@ -1,0 +1,25 @@
+{
+  "name": "@worldgraph/manifests",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./validation": "./src/validation.ts"
+  },
+  "scripts": {
+    "build": "tsup src/index.ts --format esm --dts --clean",
+    "clean": "rm -rf dist",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@worldgraph/catalog": "workspace:*",
+    "@worldgraph/contracts": "workspace:*",
+    "ajv": "catalog:",
+    "ajv-formats": "catalog:",
+    "yaml": "2.9.0"
+  },
+  "devDependencies": {
+    "tsup": "catalog:"
+  }
+}

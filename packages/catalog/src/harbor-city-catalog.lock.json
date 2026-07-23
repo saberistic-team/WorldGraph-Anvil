@@ -1,0 +1,9 @@
+{
+  "catalog": "worldgraph.harbor-city-economy@1.0.0",
+  "schemaVersion": 1,
+  "primitives": {
+    "worldgraph.production-recipe.metal-part-fabrication@1.0.0": "765af04e4cb2914f30ee2a306e8489384aa73557db8aad51e3c00841dfc4b626",
+    "worldgraph.resource.iron-ore@1.0.0": "6c8976b133e0c418c731548ad9ff2c7c5121abd87497184474e59f17410882dd",
+    "worldgraph.resource.metal-part@1.0.0": "c00ad09b7b07f808ddfd09161dbe97ce77b9dd3a0d5e71f8fde8ca4a39c2b402"
+  }
+}

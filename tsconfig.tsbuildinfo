@@ -1,0 +1,1 @@
+{"root":["./playwright.config.ts","./vitest.integration.config.ts","./vitest.unit.config.ts","./scripts/check-compiler-golden.ts","./tests/e2e/identity-authority.spec.ts","./tests/e2e/manifest-studio.spec.ts","./tests/e2e/primitive-registry.spec.ts","./tests/e2e/system.spec.ts","./tests/e2e/worldgraph.spec.ts"],"version":"6.0.3"}

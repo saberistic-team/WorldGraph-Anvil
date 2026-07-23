@@ -1,0 +1,35 @@
+{
+  "name": "@worldgraph/worker",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsup",
+    "clean": "rm -rf dist",
+    "dev": "tsx watch src/index.ts",
+    "start": "node dist/index.js",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@opentelemetry/api": "catalog:",
+    "@worldgraph/catalog": "workspace:*",
+    "@worldgraph/config": "workspace:*",
+    "@worldgraph/compiler": "workspace:*",
+    "@worldgraph/contracts": "workspace:*",
+    "@worldgraph/db": "workspace:*",
+    "@worldgraph/economy-command": "workspace:*",
+    "@worldgraph/ledger": "workspace:*",
+    "@worldgraph/manifests": "workspace:*",
+    "@worldgraph/observability": "workspace:*",
+    "@worldgraph/simulation-command": "workspace:*",
+    "bullmq": "catalog:",
+    "ioredis": "catalog:",
+    "pg": "catalog:",
+    "pino": "catalog:"
+  },
+  "devDependencies": {
+    "@worldgraph/test-utils": "workspace:*",
+    "@types/pg": "8.20.0",
+    "tsup": "catalog:"
+  }
+}

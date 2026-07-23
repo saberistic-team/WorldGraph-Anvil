@@ -1,0 +1,269 @@
+{
+  "annotations": { "list": [] },
+  "editable": false,
+  "panels": [
+    {
+      "description": "API-emitted outcomes include accepted, rejected, replayed and idempotency-conflict commands. Retry failure_class separates serialization from deadlock contention. Amounts, wallets and world identifiers are intentionally absent from labels.",
+      "fieldConfig": { "defaults": {}, "overrides": [] },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "id": 1,
+      "targets": [
+        {
+          "expr": "sum by (operation, outcome) (rate(worldgraph_economy_commands_total[5m]))",
+          "legendFormat": "{{operation}} · {{outcome}}",
+          "refId": "A"
+        },
+        {
+          "expr": "sum by (failure_class) (rate(worldgraph_economy_serialization_retries_total[5m]))",
+          "legendFormat": "retry · {{failure_class}}",
+          "refId": "B"
+        },
+        {
+          "expr": "sum by (signal) (rate(worldgraph_economy_abuse_signals_total[5m]))",
+          "legendFormat": "signal · {{signal}}",
+          "refId": "C"
+        }
+      ],
+      "title": "Economy command outcomes",
+      "type": "timeseries"
+    },
+    {
+      "description": "Worker-emitted authoritative-tick offer sweeps; Redis is not part of this path.",
+      "fieldConfig": { "defaults": {}, "overrides": [] },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "id": 2,
+      "targets": [
+        {
+          "expr": "sum by (outcome) (rate(worldgraph_economy_offer_sweeps_total[5m]))",
+          "legendFormat": "{{outcome}}",
+          "refId": "A"
+        },
+        {
+          "expr": "sum(rate(worldgraph_economy_expired_offer_tick_lag_sum[5m])) / clamp_min(sum(rate(worldgraph_economy_expired_offer_tick_lag_count[5m])), 1)",
+          "legendFormat": "average tick lag",
+          "refId": "B"
+        }
+      ],
+      "title": "Authoritative-tick offer sweeps",
+      "type": "timeseries"
+    },
+    {
+      "description": "Worker-observed authoritative PostgreSQL state. No series means unknown—not zero.",
+      "fieldConfig": { "defaults": {}, "overrides": [] },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+      "id": 3,
+      "targets": [
+        {
+          "expr": "max(worldgraph_economy_reconciliation_mismatches)",
+          "legendFormat": "mismatches",
+          "refId": "A"
+        },
+        {
+          "expr": "max(worldgraph_economy_open_expired_offers)",
+          "legendFormat": "overdue open offers",
+          "refId": "B"
+        },
+        {
+          "expr": "max(worldgraph_economy_last_repair_timestamp_seconds)",
+          "legendFormat": "latest repair (Unix seconds; 0 means none)",
+          "refId": "C"
+        }
+      ],
+      "title": "Authoritative economy state",
+      "type": "timeseries"
+    },
+    {
+      "description": "Worker-observed aggregate inventory; intentionally excludes wallet-level balances.",
+      "fieldConfig": { "defaults": {}, "overrides": [] },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+      "id": 4,
+      "targets": [
+        {
+          "expr": "sum by (kind) (worldgraph_economy_object_count)",
+          "legendFormat": "{{kind}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Economy object counts",
+      "type": "timeseries"
+    },
+    {
+      "description": "Worker dispatch outcomes and mean command duration for the four allowlisted commerce schedule action types. IDs and financial values are never metric labels.",
+      "fieldConfig": { "defaults": {}, "overrides": [] },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 16 },
+      "id": 5,
+      "targets": [
+        {
+          "expr": "sum by (action_type, outcome) (rate(worldgraph_commerce_scheduled_commands_total[5m]))",
+          "legendFormat": "{{action_type}} · {{outcome}}",
+          "refId": "A"
+        },
+        {
+          "expr": "sum by (action_type, outcome) (rate(worldgraph_commerce_scheduled_command_duration_ms_sum[5m])) / clamp_min(sum by (action_type, outcome) (rate(worldgraph_commerce_scheduled_command_duration_ms_count[5m])), 1)",
+          "legendFormat": "{{action_type}} · {{outcome}} mean ms",
+          "refId": "B"
+        }
+      ],
+      "title": "Commerce scheduled commands",
+      "type": "timeseries"
+    },
+    {
+      "description": "Average durable effects awaiting dispatch and p95 lag in authoritative world ticks. Redis carries wakes only; PostgreSQL remains due-time authority.",
+      "fieldConfig": { "defaults": {}, "overrides": [] },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 16 },
+      "id": 6,
+      "targets": [
+        {
+          "expr": "sum(rate(worldgraph_commerce_scheduled_effects_pending_sum[5m])) / clamp_min(sum(rate(worldgraph_commerce_scheduled_effects_pending_count[5m])), 1)",
+          "legendFormat": "mean pending effects",
+          "refId": "A"
+        },
+        {
+          "expr": "histogram_quantile(0.95, sum by (le, action_type) (rate(worldgraph_commerce_scheduler_lag_ticks_bucket[5m])))",
+          "legendFormat": "{{action_type}} p95 lag ticks",
+          "refId": "B"
+        }
+      ],
+      "title": "Commerce pending effects and tick lag",
+      "type": "timeseries"
+    },
+    {
+      "description": "Periodic PostgreSQL reconciliation sweep outcomes and mean duration. Failures use a bounded outcome label only.",
+      "fieldConfig": { "defaults": {}, "overrides": [] },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 24 },
+      "id": 7,
+      "targets": [
+        {
+          "expr": "sum by (outcome) (rate(worldgraph_commerce_scheduler_sweeps_total[5m]))",
+          "legendFormat": "{{outcome}}",
+          "refId": "A"
+        },
+        {
+          "expr": "sum by (outcome) (rate(worldgraph_commerce_scheduler_sweep_duration_ms_sum[5m])) / clamp_min(sum by (outcome) (rate(worldgraph_commerce_scheduler_sweep_duration_ms_count[5m])), 1)",
+          "legendFormat": "{{outcome}} mean ms",
+          "refId": "B"
+        }
+      ],
+      "title": "Commerce scheduler sweeps",
+      "type": "timeseries"
+    },
+    {
+      "description": "Safe ID-only invalidations published from the durable outbox. A no-subscriber outcome is successful and expected when no realtime gateway is attached.",
+      "fieldConfig": { "defaults": {}, "overrides": [] },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 24 },
+      "id": 8,
+      "targets": [
+        {
+          "expr": "sum by (message_type, outcome) (rate(worldgraph_commerce_realtime_publications_total[5m]))",
+          "legendFormat": "{{message_type}} · {{outcome}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Commerce realtime invalidations",
+      "type": "timeseries"
+    },
+    {
+      "description": "PostgreSQL-authoritative active reservation count and maximum age. Age is derived only from persisted world ticks and the reservation's creation event.",
+      "fieldConfig": { "defaults": {}, "overrides": [] },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 32 },
+      "id": 9,
+      "targets": [
+        {
+          "expr": "max(worldgraph_commerce_inventory_reservations_active)",
+          "legendFormat": "active reservations",
+          "refId": "A"
+        },
+        {
+          "expr": "max(worldgraph_commerce_inventory_reservation_max_age_ticks)",
+          "legendFormat": "oldest reservation (ticks)",
+          "refId": "B"
+        }
+      ],
+      "title": "Inventory reservation health",
+      "type": "timeseries"
+    },
+    {
+      "description": "Authoritative overdue/failed run and failed payroll counts. Overdue duration is measured in persisted world ticks; cumulative failure gauges are suitable for delta-over-time views.",
+      "fieldConfig": { "defaults": {}, "overrides": [] },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 32 },
+      "id": 10,
+      "targets": [
+        {
+          "expr": "max(worldgraph_commerce_production_runs_overdue)",
+          "legendFormat": "overdue runs",
+          "refId": "A"
+        },
+        {
+          "expr": "max(worldgraph_commerce_production_max_overdue_ticks)",
+          "legendFormat": "maximum overdue ticks",
+          "refId": "B"
+        },
+        {
+          "expr": "clamp_min(delta(worldgraph_commerce_production_runs_failed[15m]), 0)",
+          "legendFormat": "production failures / 15m",
+          "refId": "C"
+        },
+        {
+          "expr": "clamp_min(delta(worldgraph_commerce_payroll_records_failed[15m]), 0)",
+          "legendFormat": "payroll failures / 15m",
+          "refId": "D"
+        }
+      ],
+      "title": "Production and payroll health",
+      "type": "timeseries"
+    },
+    {
+      "description": "Completed trade and tax-assessment deltas from immutable PostgreSQL facts, plus listings that remain open at or behind their authoritative expiry tick. No quantity or financial amount is exported.",
+      "fieldConfig": { "defaults": {}, "overrides": [] },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 40 },
+      "id": 11,
+      "targets": [
+        {
+          "expr": "clamp_min(delta(worldgraph_commerce_market_volume_trades[15m]), 0)",
+          "legendFormat": "completed trades / 15m",
+          "refId": "A"
+        },
+        {
+          "expr": "clamp_min(delta(worldgraph_commerce_tax_settlements[15m]), 0)",
+          "legendFormat": "tax settlements / 15m",
+          "refId": "B"
+        },
+        {
+          "expr": "max(worldgraph_commerce_stale_listings)",
+          "legendFormat": "stale open listings",
+          "refId": "C"
+        }
+      ],
+      "title": "Market and tax activity",
+      "type": "timeseries"
+    },
+    {
+      "description": "Absolute treasury balance-projection versus immutable-posting delta and mismatched treasury-wallet count. Both must remain zero. The aggregate amount is a gauge value, never a label.",
+      "fieldConfig": { "defaults": {}, "overrides": [] },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 40 },
+      "id": 12,
+      "targets": [
+        {
+          "expr": "max(worldgraph_commerce_treasury_reconciliation_delta_minor)",
+          "legendFormat": "absolute delta (minor units)",
+          "refId": "A"
+        },
+        {
+          "expr": "max(worldgraph_commerce_treasury_reconciliation_mismatches)",
+          "legendFormat": "mismatched treasury wallets",
+          "refId": "B"
+        }
+      ],
+      "title": "Treasury settlement reconciliation",
+      "type": "timeseries"
+    }
+  ],
+  "schemaVersion": 39,
+  "tags": ["worldgraph", "economy", "v1"],
+  "templating": { "list": [] },
+  "time": { "from": "now-6h", "to": "now" },
+  "timezone": "browser",
+  "title": "WorldGraph Economy v1",
+  "uid": "worldgraph-economy-v1",
+  "version": 4
+}

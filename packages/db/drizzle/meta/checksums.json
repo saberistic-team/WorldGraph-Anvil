@@ -1,0 +1,17 @@
+{
+  "algorithm": "sha256",
+  "migrations": {
+    "0001_platform_extensions.sql": "94c32a2681812e85a32689f2aee8bf9cb81653c3973e7530d6b406089d03ad66",
+    "0002_platform_metadata.sql": "ad2e744815621cbf66242fc0acd72f1faaa7d88c19c4991f780055c4a357e52a",
+    "0003_identity_authority.sql": "860f0a9c0d77a5c1e0fff88b7516956ab5b900ab52659502020d91b73abf646b",
+    "0004_primitive_registry.sql": "f498545519e93eba894de171e565a364bdec3ded03f3674dbd8b4ec43d1c0263",
+    "0005_manifest_studio.sql": "7c9ca2c5bbf7c1c573fd73f1a93dc416ea72b8d8abe840b623acbd09d3bfc601",
+    "0006_deterministic_compiler.sql": "1e62ff203eb3fd700c27f7c7969ccaa14d3b9ee0bf1a593b668009b4f7f78372",
+    "0007_command_event_ledger.sql": "4ab7ec51af8d137b219f7796e2b41c97b5e49979dea47613cf4323f0d3b3781f",
+    "0008_deterministic_clock_scheduler.sql": "48bac393d34660a146ca6d65f9a228e3a0d438cc80ccabba5b6ec7c721c32f74",
+    "0009_wallets_transfers_ownership.sql": "2a7236fa86d9744a15612ad79319683a976e61f56bce3f9f4a95e619801b205e",
+    "0010_production_business_market_tax.sql": "24b68fd1789c303f937c01dcc5e15c238c253e0fdd6391cac1c9c5f691bb8f75",
+    "0011_commerce_projection_repair.sql": "9b1923c5ccabe62abb1502f7a525f0052bd7c3e015b0ec41aa1bb7833fa7c3b6",
+    "0012_commerce_reconciliation_integrity.sql": "44de5f5ee34430d32b5b6866f4469dc7e843293f378490b935ca7f80295a4709"
+  }
+}

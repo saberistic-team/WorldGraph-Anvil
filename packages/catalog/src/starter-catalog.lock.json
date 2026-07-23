@@ -1,0 +1,22 @@
+{
+  "catalog": "worldgraph.city-state-starter@1.0.0",
+  "schemaVersion": 1,
+  "primitives": {
+    "worldgraph.building.modular-guild-hall@1.0.0": "91dd3b21ce0e07eba0beb9d0ddd897a14e668004beaa8e5ae56b8d6c11a55023",
+    "worldgraph.currency.closed-loop-credits@1.0.0": "38329b88b492eed14a9cfde37747d5d157cb2ba9471a393c87d9f84d6ffbbba5",
+    "worldgraph.district.floating-mixed-use@1.0.0": "e1f2e3c12b3299fa7d982127b10cfedf5ad8a86b7243a787d6006367776d483f",
+    "worldgraph.election.council-ballot@1.0.0": "f08d57d2d68c6347bae63af7c39c95ca04d4356b2bddd3e62b700bc511e659da",
+    "worldgraph.event-template.council-session@1.0.0": "c332326ece71a6473850664f9f090db868857eb31628bd5c83339bd0288c7594",
+    "worldgraph.government.guild-council@1.0.0": "c065b367849253adc984cb037de346da9e2391cd4a5d468111e0c0d03776c99e",
+    "worldgraph.legal-right.civic-charter@1.0.0": "575aa5d0f62143904cb1860038cd770df6b8967575661986c9e4101ad526ec2d",
+    "worldgraph.office.councillor@1.0.0": "c83db750d826f783a107ea7d719b285dd2f07c60eff0c30bd0145e3c2abcf90d",
+    "worldgraph.organization.guild@1.0.0": "04f7169f19163baf6f53d269fce3ba85d42f38a14da73a98f3c4d1415b2f96d2",
+    "worldgraph.player-role.citizen@1.0.0": "10e53adfda375f43d4d6a1b580b3339bd9daf5ea1606e07b1303f08bea30b60b",
+    "worldgraph.production-recipe.energy-reclamation@1.0.0": "f115d6cf0a586df89c024973f4789d8559819dacad3b6c583deaa476c8a6cd69",
+    "worldgraph.resource.energy@1.0.0": "3927f89a2f3e015e4b80dbe792d96b79580d6a0a2d1885a40e586762a10e0deb",
+    "worldgraph.simulation-rule.discrete-city-clock@1.0.0": "52595749f6ebcb78705dd429a9d3ef77b642e43ca1bc60165215f7cc881ede15",
+    "worldgraph.tax.flat-transaction-levy@1.0.0": "6c564eb24216a12c9530b88cd42fd441ebdc832626efb893cbb3e6e7abc9cfaa",
+    "worldgraph.terrain.floating-platform@1.0.0": "87a421e629e8b46671a51f8323ff17748c56a68e2839e93668f65f7f64e8969e",
+    "worldgraph.visual-style.low-poly-floating-city@1.0.0": "95196503167d6da8d956daa2dd9eff91e27c38bf0d6ae1eee518a0c63f74cefc"
+  }
+}

@@ -1,0 +1,195 @@
+name: worldgraph-anvil
+
+x-app-environment: &app-environment
+  NODE_ENV: development
+  BUILD_REVISION: ${BUILD_REVISION:-local-compose}
+  LOG_LEVEL: ${LOG_LEVEL:-info}
+  DATABASE_URL: postgres://worldgraph_app:worldgraph_app_local_only@postgres:5432/worldgraph
+  REDIS_URL: redis://redis:6379/0
+  ALLOWED_ORIGINS: http://localhost:${WEB_PORT:-3000}
+  ENABLE_LOCAL_REGISTRATION: ${ENABLE_LOCAL_REGISTRATION:-true}
+  SESSION_IDLE_TTL_SECONDS: ${SESSION_IDLE_TTL_SECONDS:-604800}
+  SESSION_ABSOLUTE_TTL_SECONDS: ${SESSION_ABSOLUTE_TTL_SECONDS:-2592000}
+  DEPENDENCY_TIMEOUT_MS: ${DEPENDENCY_TIMEOUT_MS:-1500}
+  REQUEST_TIMEOUT_MS: ${REQUEST_TIMEOUT_MS:-10000}
+  PRIMITIVE_SEMANTIC_PROFILE: ${PRIMITIVE_SEMANTIC_PROFILE:-disabled}
+  PRIMITIVE_SEMANTIC_CONTRIBUTION_ENABLED: ${PRIMITIVE_SEMANTIC_CONTRIBUTION_ENABLED:-false}
+  PRIMITIVE_EMBEDDING_TIMEOUT_MS: ${PRIMITIVE_EMBEDDING_TIMEOUT_MS:-3000}
+  PRIMITIVE_EMBEDDING_COST_BUDGET_MICROUNITS: ${PRIMITIVE_EMBEDDING_COST_BUDGET_MICROUNITS:-0}
+  PRIMITIVE_INDEX_MAX_JOBS_PER_RECONCILIATION: ${PRIMITIVE_INDEX_MAX_JOBS_PER_RECONCILIATION:-25}
+  COMMERCE_SCHEDULE_ENABLED: ${COMMERCE_SCHEDULE_ENABLED:-true}
+  COMMERCE_SCHEDULE_BATCH_SIZE: ${COMMERCE_SCHEDULE_BATCH_SIZE:-25}
+  COMMERCE_SCHEDULE_RECONCILIATION_INTERVAL_MS: ${COMMERCE_SCHEDULE_RECONCILIATION_INTERVAL_MS:-1000}
+  PRIMITIVE_INDEX_RECONCILIATION_INTERVAL_MS: ${PRIMITIVE_INDEX_RECONCILIATION_INTERVAL_MS:-5000}
+  MANIFEST_GENERATION_ENABLED: ${MANIFEST_GENERATION_ENABLED:-true}
+  MANIFEST_GENERATION_PROVIDER: ${MANIFEST_GENERATION_PROVIDER:-disabled}
+  MANIFEST_GENERATION_PROVIDER_TIMEOUT_MS: ${MANIFEST_GENERATION_PROVIDER_TIMEOUT_MS:-8000}
+  MANIFEST_GENERATION_OUTPUT_TOKEN_LIMIT: ${MANIFEST_GENERATION_OUTPUT_TOKEN_LIMIT:-4096}
+  MANIFEST_GENERATION_DAILY_BUDGET_MICROUNITS: ${MANIFEST_GENERATION_DAILY_BUDGET_MICROUNITS:-0}
+  MANIFEST_GENERATION_MAX_CONCURRENT_PER_USER: ${MANIFEST_GENERATION_MAX_CONCURRENT_PER_USER:-2}
+  MANIFEST_GENERATION_MAX_CONCURRENT_PER_WORLD: ${MANIFEST_GENERATION_MAX_CONCURRENT_PER_WORLD:-1}
+  MANIFEST_GENERATION_RECONCILIATION_INTERVAL_MS: ${MANIFEST_GENERATION_RECONCILIATION_INTERVAL_MS:-2000}
+  MANIFEST_PROMPT_RETENTION_DAYS: ${MANIFEST_PROMPT_RETENTION_DAYS:-30}
+  COMPILER_ENABLED: ${COMPILER_ENABLED:-true}
+  COMPILER_MAX_ENTITIES: ${COMPILER_MAX_ENTITIES:-2000}
+  COMPILER_MAX_RELATIONSHIPS: ${COMPILER_MAX_RELATIONSHIPS:-8000}
+  WORLD_COMPILATION_RECONCILIATION_INTERVAL_MS: ${WORLD_COMPILATION_RECONCILIATION_INTERVAL_MS:-2000}
+  ECONOMY_TRANSFERS_ENABLED: ${ECONOMY_TRANSFERS_ENABLED:-true}
+  ECONOMY_OFFERS_ENABLED: ${ECONOMY_OFFERS_ENABLED:-true}
+  ECONOMY_ISSUANCE_ENABLED: ${ECONOMY_ISSUANCE_ENABLED:-true}
+  ECONOMY_DEBITS_FROZEN: ${ECONOMY_DEBITS_FROZEN:-false}
+  ECONOMY_DISABLED_TAX_POLICY_IDS: ${ECONOMY_DISABLED_TAX_POLICY_IDS:-}
+  ECONOMY_TRANSFER_RATE_LIMIT_PER_MINUTE: ${ECONOMY_TRANSFER_RATE_LIMIT_PER_MINUTE:-20}
+  ECONOMY_OFFER_RATE_LIMIT_PER_MINUTE: ${ECONOMY_OFFER_RATE_LIMIT_PER_MINUTE:-10}
+  ECONOMY_ISSUANCE_RATE_LIMIT_PER_HOUR: ${ECONOMY_ISSUANCE_RATE_LIMIT_PER_HOUR:-3}
+  ECONOMY_JOBS_ENABLED: ${ECONOMY_JOBS_ENABLED:-true}
+  ECONOMY_LISTINGS_ENABLED: ${ECONOMY_LISTINGS_ENABLED:-true}
+  ECONOMY_LISTING_RATE_LIMIT_PER_MINUTE: ${ECONOMY_LISTING_RATE_LIMIT_PER_MINUTE:-10}
+  ECONOMY_PRODUCTION_ENABLED: ${ECONOMY_PRODUCTION_ENABLED:-true}
+  ECONOMY_PRODUCTION_RATE_LIMIT_PER_MINUTE: ${ECONOMY_PRODUCTION_RATE_LIMIT_PER_MINUTE:-10}
+  ECONOMY_PURCHASES_ENABLED: ${ECONOMY_PURCHASES_ENABLED:-true}
+  ECONOMY_PURCHASE_RATE_LIMIT_PER_MINUTE: ${ECONOMY_PURCHASE_RATE_LIMIT_PER_MINUTE:-20}
+  ECONOMY_WORK_RATE_LIMIT_PER_MINUTE: ${ECONOMY_WORK_RATE_LIMIT_PER_MINUTE:-10}
+  ECONOMY_OFFER_RECONCILIATION_BATCH_SIZE: ${ECONOMY_OFFER_RECONCILIATION_BATCH_SIZE:-25}
+  ECONOMY_OFFER_RECONCILIATION_INTERVAL_MS: ${ECONOMY_OFFER_RECONCILIATION_INTERVAL_MS:-1000}
+  OUTBOX_BATCH_SIZE: ${OUTBOX_BATCH_SIZE:-25}
+  OUTBOX_LEASE_MS: ${OUTBOX_LEASE_MS:-30000}
+  OUTBOX_MAXIMUM_ATTEMPTS: ${OUTBOX_MAXIMUM_ATTEMPTS:-10}
+  OUTBOX_RECONCILIATION_INTERVAL_MS: ${OUTBOX_RECONCILIATION_INTERVAL_MS:-1000}
+  SIMULATION_CONTINUOUS_ENABLED: ${SIMULATION_CONTINUOUS_ENABLED:-true}
+  SIMULATION_LEASE_MS: ${SIMULATION_LEASE_MS:-30000}
+  SIMULATION_MAXIMUM_ATTEMPTS: ${SIMULATION_MAXIMUM_ATTEMPTS:-3}
+  SIMULATION_MAXIMUM_BACKOFF_MS: ${SIMULATION_MAXIMUM_BACKOFF_MS:-5000}
+  SIMULATION_MAXIMUM_WORLDS_PER_RUN: ${SIMULATION_MAXIMUM_WORLDS_PER_RUN:-25}
+  SIMULATION_RECONCILIATION_INTERVAL_MS: ${SIMULATION_RECONCILIATION_INTERVAL_MS:-1000}
+  SIMULATION_RETRY_BASE_MS: ${SIMULATION_RETRY_BASE_MS:-250}
+  OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
+  WORKER_HEARTBEAT_INTERVAL_MS: ${WORKER_HEARTBEAT_INTERVAL_MS:-5000}
+  WORKER_HEARTBEAT_TTL_MS: ${WORKER_HEARTBEAT_TTL_MS:-15000}
+  ENABLE_OPERATIONAL_SMOKE: ${ENABLE_OPERATIONAL_SMOKE:-false}
+  OPERATIONS_TOKEN: ${OPERATIONS_TOKEN:-replace-with-at-least-32-random-characters}
+
+services:
+  postgres:
+    build:
+      context: ./docker/postgres
+    environment:
+      POSTGRES_DB: worldgraph
+      POSTGRES_PASSWORD: worldgraph_owner_local_only
+      POSTGRES_USER: worldgraph_owner
+    healthcheck:
+      test: [CMD-SHELL, pg_isready -U worldgraph_owner -d worldgraph]
+      interval: 2s
+      timeout: 3s
+      retries: 20
+    ports:
+      - ${POSTGRES_PORT:-5432}:5432
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+
+  redis:
+    image: redis:8.4.0-alpine
+    command: [redis-server, --save, '', --appendonly, 'no']
+    healthcheck:
+      test: [CMD, redis-cli, ping]
+      interval: 2s
+      timeout: 3s
+      retries: 20
+    ports:
+      - 6379:6379
+
+  migrate:
+    build:
+      context: .
+    command: [node, node_modules/tsx/dist/cli.mjs, packages/db/src/cli/bootstrap.ts]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      MIGRATION_DATABASE_URL: postgres://worldgraph_owner:worldgraph_owner_local_only@postgres:5432/worldgraph
+    restart: no
+
+  api:
+    build:
+      context: .
+    command: [node, apps/api/dist/index.js]
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    environment:
+      <<: *app-environment
+      AUTH_PEPPER: ${AUTH_PEPPER:-local-only-auth-pepper-change-before-production}
+      API_HOST: 0.0.0.0
+      API_PORT: 4000
+    healthcheck:
+      test:
+        [
+          CMD,
+          node,
+          -e,
+          "fetch('http://127.0.0.1:4000/health/live').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))",
+        ]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    ports:
+      - 4000:4000
+
+  worker:
+    build:
+      context: .
+    command: [node, apps/worker/dist/index.js]
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    environment:
+      <<: *app-environment
+      WORKER_HEALTH_HOST: 0.0.0.0
+      WORKER_HEALTH_PORT: 4001
+    healthcheck:
+      test:
+        [
+          CMD,
+          node,
+          -e,
+          "fetch('http://127.0.0.1:4001/health/ready').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))",
+        ]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  web:
+    build:
+      context: .
+    command: [node, node_modules/next/dist/bin/next, start, --hostname, 0.0.0.0, --port, '3000']
+    depends_on:
+      api:
+        condition: service_healthy
+      worker:
+        condition: service_healthy
+    environment:
+      API_INTERNAL_URL: http://api:4000
+      BUILD_REVISION: ${BUILD_REVISION:-local-compose}
+      NODE_ENV: production
+      WEB_PORT: 3000
+    healthcheck:
+      test:
+        [
+          CMD,
+          node,
+          -e,
+          "fetch('http://127.0.0.1:3000/health/live').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))",
+        ]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    ports:
+      - ${WEB_PORT:-3000}:3000
+    working_dir: /app/apps/web
+
+volumes:
+  postgres-data:

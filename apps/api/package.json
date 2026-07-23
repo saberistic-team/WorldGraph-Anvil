@@ -1,0 +1,43 @@
+{
+  "name": "@worldgraph/api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsup",
+    "clean": "rm -rf dist",
+    "dev": "tsx watch src/index.ts",
+    "start": "node dist/index.js",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@fastify/cookie": "11.1.2",
+    "@fastify/cors": "11.3.0",
+    "@fastify/helmet": "13.1.0",
+    "@fastify/rate-limit": "11.1.0",
+    "@sinclair/typebox": "catalog:",
+    "@node-rs/argon2": "2.0.2",
+    "@worldgraph/config": "workspace:*",
+    "@worldgraph/catalog": "workspace:*",
+    "@worldgraph/compiler": "workspace:*",
+    "@worldgraph/contracts": "workspace:*",
+    "@worldgraph/db": "workspace:*",
+    "@worldgraph/economy": "workspace:*",
+    "@worldgraph/ledger": "workspace:*",
+    "@worldgraph/manifests": "workspace:*",
+    "@worldgraph/observability": "workspace:*",
+    "@worldgraph/simulation": "workspace:*",
+    "ajv": "catalog:",
+    "ajv-formats": "catalog:",
+    "bullmq": "catalog:",
+    "fastify": "catalog:",
+    "ioredis": "catalog:",
+    "pg": "catalog:",
+    "pino": "catalog:"
+  },
+  "devDependencies": {
+    "@worldgraph/test-utils": "workspace:*",
+    "@types/pg": "8.20.0",
+    "tsup": "catalog:"
+  }
+}

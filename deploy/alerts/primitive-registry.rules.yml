@@ -1,0 +1,61 @@
+groups:
+  - name: worldgraph-primitive-registry
+    rules:
+      - alert: WorldGraphPrimitiveIndexBacklogOld
+        expr: |
+          (
+            sum by (provider_configuration) (rate(worldgraph_primitive_index_backlog_age_ms_sum[10m]))
+            /
+            clamp_min(sum by (provider_configuration) (rate(worldgraph_primitive_index_backlog_age_ms_count[10m])), 0.001)
+          ) > 300000
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: Primitive indexing backlog has remained older than five minutes.
+          runbook: docs/primitive-operations.md#reindex-and-recovery
+
+      - alert: WorldGraphPrimitiveIndexTerminalFailures
+        expr: |
+          sum by (provider_configuration) (rate(worldgraph_primitive_index_jobs_total{outcome=~"dead|stale"}[10m])) > 0
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: Primitive indexing is producing terminal dead or stale jobs.
+          runbook: docs/primitive-operations.md#reindex-and-recovery
+
+      - alert: WorldGraphPrimitiveRetrievalUnexpectedlyEmpty
+        expr: |
+          (
+            sum(rate(worldgraph_primitive_retrievals_total{outcome="empty"}[10m]))
+            /
+            clamp_min(sum(rate(worldgraph_primitive_retrievals_total[10m])), 0.001)
+          ) > 0.5
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: More than half of primitive retrievals are returning no compatible match.
+          runbook: docs/primitive-operations.md#reindex-and-recovery
+
+      - alert: WorldGraphPrimitiveMutationFailures
+        expr: |
+          sum(increase(worldgraph_primitive_mutation_failures_total{reason_code="UNEXPECTED_FAILURE"}[5m])) > 0
+          or
+          sum(increase(worldgraph_primitive_command_audit_write_failures_total[5m])) > 0
+        labels:
+          severity: critical
+        annotations:
+          summary: Primitive registry mutations or their mandatory failure audits are failing unexpectedly.
+          runbook: docs/primitive-operations.md#compromised-primitive
+
+      - alert: WorldGraphPrimitiveProviderFailures
+        expr: |
+          sum by (provider_configuration) (rate(worldgraph_primitive_index_jobs_total{code=~"PROVIDER_FAILED|PROVIDER_RATE_LIMITED|PROVIDER_TIMEOUT|VECTOR_INVALID"}[10m])) > 0.1
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: Primitive embedding provider failures exceed the closed-alpha threshold.
+          runbook: docs/primitive-operations.md#reindex-and-recovery

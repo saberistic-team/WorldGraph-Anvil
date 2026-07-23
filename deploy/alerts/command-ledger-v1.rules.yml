@@ -1,0 +1,44 @@
+groups:
+  - name: worldgraph-command-ledger-v1
+    rules:
+      - alert: WorldGraphCommandFailureSpike
+        expr: |
+          sum(rate(worldgraph_command_outcomes_total{outcome=~"failed|failed_before_result"}[10m]))
+            /
+          clamp_min(sum(rate(worldgraph_command_outcomes_total[10m])), 0.001) > 0.05
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: Authoritative command failures exceed five percent
+      - alert: WorldGraphCommandSerializationContention
+        expr: sum(increase(worldgraph_command_serialization_retries_total[10m])) > 20
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: Authoritative commands are repeatedly retrying serialization
+      - alert: WorldGraphCommandConflictSpike
+        expr: sum(rate(worldgraph_command_conflicts_total[15m])) > 1
+        for: 15m
+        labels:
+          severity: info
+        annotations:
+          summary: Clients are submitting unusually many stale world commands
+      - alert: WorldGraphOutboxStuck
+        expr: |
+          worldgraph_outbox_backlog_sum > 0
+            and
+          worldgraph_outbox_oldest_age_ms_sum > 300000
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: Durable event delivery has remained behind for more than five minutes
+      - alert: WorldGraphOutboxDeadLetter
+        expr: worldgraph_outbox_dead_sum > 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: One or more authoritative event messages reached dead-letter state

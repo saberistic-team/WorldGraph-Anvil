@@ -1,0 +1,24 @@
+{
+  "name": "@worldgraph/contracts",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./versions": "./src/versions.ts"
+  },
+  "scripts": {
+    "build": "tsup src/index.ts --format esm --dts --clean",
+    "clean": "rm -rf dist",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@sinclair/typebox": "catalog:",
+    "ajv": "catalog:",
+    "ajv-formats": "catalog:",
+    "uuid": "catalog:"
+  },
+  "devDependencies": {
+    "tsup": "catalog:"
+  }
+}

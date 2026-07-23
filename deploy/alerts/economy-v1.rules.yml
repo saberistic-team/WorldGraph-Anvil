@@ -1,0 +1,221 @@
+groups:
+  - name: worldgraph-economy-v1
+    rules:
+      - alert: WorldGraphEconomyInvariantAttempt
+        expr: increase(worldgraph_economy_invariant_findings_total[5m]) > 0
+        for: 0m
+        labels:
+          severity: critical
+        annotations:
+          summary: An economy invariant rejected or detected an invalid write
+          runbook: docs/operations.md#economy-invariant-or-reconciliation-failure
+
+      - alert: WorldGraphEconomyReconciliationMismatch
+        expr: increase(worldgraph_economy_invariant_findings_total{check="reconciliation_mismatch"}[10m]) > 0
+        for: 0m
+        labels:
+          severity: critical
+        annotations:
+          summary: An economy projection no longer matches immutable facts
+          runbook: docs/operations.md#economy-invariant-or-reconciliation-failure
+
+      - alert: WorldGraphEconomyIssuanceOverride
+        expr: increase(worldgraph_economy_issuance_overrides_total[15m]) > 0
+        for: 0m
+        labels:
+          severity: warning
+        annotations:
+          summary: A creator currency-issuance override was accepted
+          runbook: docs/operations.md#creator-issuance-review
+
+      - alert: WorldGraphEconomySerializationContention
+        expr: rate(worldgraph_economy_serialization_retries_total[10m]) > 0.2
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: Economy commands are sustaining serialization retries
+          runbook: docs/operations.md#economy-command-contention
+
+      - alert: WorldGraphEconomyDeadlockBurst
+        expr: increase(worldgraph_economy_serialization_retries_total{failure_class="deadlock"}[10m]) > 2
+        for: 0m
+        labels:
+          severity: warning
+        annotations:
+          summary: Economy commands encountered repeated PostgreSQL deadlocks
+          runbook: docs/operations.md#economy-command-contention
+
+      - alert: WorldGraphEconomyAbuseSignalBurst
+        expr: increase(worldgraph_economy_abuse_signals_total[10m]) > 5
+        for: 0m
+        labels:
+          severity: warning
+        annotations:
+          summary: Repeated self-trade or rapid circular-transfer signals were detected
+          runbook: docs/operations.md#economy-abuse-signal-review
+
+      - alert: WorldGraphEconomyExpiredOffersStuck
+        expr: max_over_time(worldgraph_economy_open_expired_offers[15m]) > 0
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: Open offers remain past their authoritative expiry tick
+          runbook: docs/operations.md#expired-offer-reconciliation
+
+      - alert: WorldGraphEconomyOfferSweepFailing
+        expr: increase(worldgraph_economy_offer_sweeps_total{outcome="failed"}[10m]) > 2
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: Authoritative-tick offer sweeps are repeatedly failing
+          runbook: docs/operations.md#expired-offer-reconciliation
+
+      - alert: WorldGraphEconomyMetricsAbsent
+        expr: absent(worldgraph_economy_object_count) or absent(worldgraph_economy_open_expired_offers) or absent(worldgraph_economy_reconciliation_mismatches) or absent(worldgraph_economy_last_repair_timestamp_seconds)
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: Authoritative economy state metrics are absent
+          runbook: docs/operations.md#economy-invariant-or-reconciliation-failure
+
+      - alert: WorldGraphEconomyInitializationFailure
+        expr: increase(worldgraph_economy_initialization_total{outcome=~"failed|hash_mismatch"}[15m]) > 0
+        for: 0m
+        labels:
+          severity: warning
+        annotations:
+          summary: Economy initialization or legacy seed adoption failed
+          runbook: docs/operations.md#failed-economy-initialization
+
+      - alert: WorldGraphEconomyRepairExecuted
+        expr: worldgraph_economy_last_repair_timestamp_seconds > time() - 900
+        for: 0m
+        labels:
+          severity: critical
+        annotations:
+          summary: An owner-authorized append-only economy repair was executed
+          runbook: docs/operations.md#append-only-economy-repair
+
+      - alert: WorldGraphCommerceOperationalMetricsAbsent
+        expr: absent(worldgraph_commerce_inventory_reservations_active) or absent(worldgraph_commerce_inventory_reservation_max_age_ticks) or absent(worldgraph_commerce_production_runs_overdue) or absent(worldgraph_commerce_production_max_overdue_ticks) or absent(worldgraph_commerce_production_runs_failed) or absent(worldgraph_commerce_payroll_records_failed) or absent(worldgraph_commerce_market_volume_trades) or absent(worldgraph_commerce_stale_listings) or absent(worldgraph_commerce_tax_settlements) or absent(worldgraph_commerce_treasury_reconciliation_delta_minor) or absent(worldgraph_commerce_treasury_reconciliation_mismatches)
+        for: 5m
+        labels:
+          severity: warning
+          metric_source: commerce_worker_otlp
+        annotations:
+          summary: The authoritative PostgreSQL commerce snapshot is not reaching telemetry
+          runbook: docs/operations.md#m09-commerce-metrics-dashboard-and-alerts
+
+      - alert: WorldGraphCommerceReservationStuck
+        expr: max(worldgraph_commerce_inventory_reservations_active) > 0 and max(worldgraph_commerce_inventory_reservation_max_age_ticks) > 50
+        for: 15m
+        labels:
+          severity: warning
+          metric_source: commerce_worker_otlp
+        annotations:
+          summary: An active inventory reservation has remained open for more than fifty world ticks
+          runbook: docs/operations.md#inventory-reservation-or-production-backlog
+
+      - alert: WorldGraphCommerceProductionOverdue
+        expr: max(worldgraph_commerce_production_runs_overdue) > 0 and max(worldgraph_commerce_production_max_overdue_ticks) > 5
+        for: 10m
+        labels:
+          severity: warning
+          metric_source: commerce_worker_otlp
+        annotations:
+          summary: A ready production run remains more than five authoritative ticks overdue
+          runbook: docs/operations.md#inventory-reservation-or-production-backlog
+
+      - alert: WorldGraphCommerceProductionFailureBurst
+        expr: clamp_min(delta(worldgraph_commerce_production_runs_failed[10m]), 0) > 2
+        for: 5m
+        labels:
+          severity: warning
+          metric_source: commerce_worker_otlp
+        annotations:
+          summary: More than two production runs failed in a ten-minute observation window
+          runbook: docs/operations.md#production-completion-incident
+
+      - alert: WorldGraphCommercePayrollFailureBurst
+        expr: clamp_min(delta(worldgraph_commerce_payroll_records_failed[10m]), 0) > 2
+        for: 5m
+        labels:
+          severity: warning
+          metric_source: commerce_worker_otlp
+        annotations:
+          summary: More than two payroll records failed in a ten-minute observation window
+          runbook: docs/operations.md#payroll-settlement-incident
+
+      - alert: WorldGraphCommerceStaleListings
+        expr: max(worldgraph_commerce_stale_listings) > 0
+        for: 10m
+        labels:
+          severity: warning
+          metric_source: commerce_worker_otlp
+        annotations:
+          summary: Open market listings remain at or behind their authoritative expiry tick
+          runbook: docs/operations.md#listing-expiry-or-market-settlement-incident
+
+      - alert: WorldGraphCommerceTreasuryReconciliationMismatch
+        expr: max(worldgraph_commerce_treasury_reconciliation_delta_minor) > 0 or max(worldgraph_commerce_treasury_reconciliation_mismatches) > 0
+        for: 0m
+        labels:
+          severity: critical
+          metric_source: commerce_worker_otlp
+        annotations:
+          summary: Treasury balance projections and immutable postings no longer reconcile exactly
+          runbook: docs/operations.md#treasury-settlement-reconciliation
+
+      - alert: WorldGraphCommerceScheduledCommandFailing
+        expr: increase(worldgraph_commerce_scheduled_commands_total{outcome="failed"}[10m]) > 0
+        for: 5m
+        labels:
+          severity: warning
+          metric_source: commerce_worker_otlp
+        annotations:
+          summary: A durable commerce schedule effect is repeatedly failing dispatch
+          runbook: docs/operations.md#stuck-scheduled-commerce-effect
+
+      - alert: WorldGraphCommerceSchedulerSweepFailing
+        expr: increase(worldgraph_commerce_scheduler_sweeps_total{outcome="failed"}[10m]) > 2
+        for: 5m
+        labels:
+          severity: warning
+          metric_source: commerce_worker_otlp
+        annotations:
+          summary: Commerce schedule reconciliation sweeps are repeatedly failing
+          runbook: docs/operations.md#stuck-scheduled-commerce-effect
+
+      - alert: WorldGraphCommerceSchedulerLagHigh
+        expr: histogram_quantile(0.95, sum by (le, action_type) (rate(worldgraph_commerce_scheduler_lag_ticks_bucket[10m]))) > 5
+        for: 10m
+        labels:
+          severity: warning
+          metric_source: commerce_worker_otlp
+        annotations:
+          summary: Commerce scheduled effects are executing more than five world ticks late
+          runbook: docs/operations.md#stuck-scheduled-commerce-effect
+
+      - alert: WorldGraphCommerceSchedulerStalled
+        expr: sum(increase(worldgraph_commerce_scheduled_effects_pending_sum[10m])) > 0 and (sum(increase(worldgraph_commerce_scheduler_sweeps_total{outcome="succeeded"}[10m])) or vector(0)) == 0
+        for: 10m
+        labels:
+          severity: critical
+          metric_source: commerce_worker_otlp
+        annotations:
+          summary: Durable commerce effects are pending without a successful scheduler sweep
+          runbook: docs/operations.md#stuck-scheduled-commerce-effect
+
+      - alert: WorldGraphCommerceRealtimePublishFailing
+        expr: increase(worldgraph_commerce_realtime_publications_total{outcome="failed"}[10m]) > 0
+        for: 0m
+        labels:
+          severity: warning
+          metric_source: commerce_worker_otlp
+        annotations:
+          summary: Safe commerce invalidations are failing to publish from the durable outbox
+          runbook: docs/operations.md#commerce-realtime-invalidation-failure

@@ -1,0 +1,63 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.9.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.20.0
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm format:check
+      - run: pnpm lint
+      - run: pnpm typecheck
+      - name: Enforce compiler golden/version policy
+        env:
+          COMPILER_GOLDEN_BASE_REVISION: ${{ github.event.pull_request.base.sha }}
+        run: pnpm compiler:golden-check
+      - run: pnpm test:unit
+      - run: pnpm db:check
+      - run: pnpm build
+      - run: pnpm compiler:cli-check
+      - run: pnpm test:integration
+      - run: pnpm exec playwright install --with-deps chromium
+      - run: pnpm test:e2e
+      - run: pnpm audit --audit-level high
+      - name: Compose build and recovery smoke
+        env:
+          ENABLE_OPERATIONAL_SMOKE: 'true'
+          OPERATIONS_TOKEN: ci-only-operational-token-000000000001
+        run: |
+          docker compose up --build -d --wait
+          pnpm test:compose:browser
+      - if: always()
+        run: docker compose down --volumes --remove-orphans
+
+  dependency-review:
+    if: github.event_name == 'pull_request'
+    permissions:
+      contents: read
+      pull-requests: read
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/dependency-review-action@v4
+        with:
+          fail-on-severity: high
+          deny-licenses: GPL-3.0, AGPL-3.0

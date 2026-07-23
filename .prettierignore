@@ -1,0 +1,11 @@
+.next
+.turbo
+coverage
+dist
+node_modules
+.pnpm-store
+playwright-report
+pnpm-lock.yaml
+test-results
+apps/web/next-env.d.ts
+packages/db/drizzle/meta

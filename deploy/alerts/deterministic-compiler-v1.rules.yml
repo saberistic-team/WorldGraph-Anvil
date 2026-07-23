@@ -1,0 +1,100 @@
+groups:
+  - name: worldgraph-deterministic-compiler-v1
+    rules:
+      - alert: WorldGraphCompilationBacklogStuck
+        expr: |
+          (
+            sum(rate(worldgraph_compilation_backlog_age_ms_sum{state="queued"}[10m]))
+            /
+            clamp_min(sum(rate(worldgraph_compilation_backlog_age_ms_count{state="queued"}[10m])), 0.001)
+          ) > 300000
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: World compilation work has remained queued for more than five minutes.
+          runbook: docs/operations.md#stuck-or-failed-world-compilation
+
+      - alert: WorldGraphCompilationFailureSpike
+        expr: |
+          (
+            sum(rate(worldgraph_compilation_runs_total{outcome="failed"}[10m]))
+            /
+            clamp_min(sum(rate(worldgraph_compilation_runs_total{outcome=~"failed|succeeded"}[10m])), 0.001)
+          ) > 0.2
+          and
+          sum(increase(worldgraph_compilation_runs_total{outcome="failed"}[10m])) >= 3
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: More than twenty percent of terminal world compilations are failing.
+          runbook: docs/operations.md#stuck-or-failed-world-compilation
+
+      - alert: WorldGraphCompilationUnsupportedAdapter
+        expr: |
+          sum(increase(worldgraph_compilation_runs_total{outcome="failed",code="UNSUPPORTED_PRIMITIVE_BEHAVIOR"}[10m])) > 0
+        labels:
+          severity: critical
+        annotations:
+          summary: An approved manifest references a primitive behavior unsupported by the active compiler.
+          runbook: docs/operations.md#stuck-or-failed-world-compilation
+
+      - alert: WorldGraphCompilationLockWaitHigh
+        expr: |
+          histogram_quantile(
+            0.95,
+            sum by (le) (rate(worldgraph_compilation_lock_wait_ms_bucket{operation="seed_activate"}[10m]))
+          ) > 2000
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: World compilation activation lock wait p95 exceeds two seconds.
+          runbook: docs/operations.md#stuck-or-failed-world-compilation
+
+      - alert: WorldGraphCompilationSerializationContention
+        expr: |
+          sum(rate(worldgraph_compilation_serialization_retries_total{operation="seed_activate"}[10m])) > 0.1
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: Serializable world activation transactions are retrying frequently.
+          runbook: docs/operations.md#stuck-or-failed-world-compilation
+
+      - alert: WorldGraphCompilationArtifactUnusuallyLarge
+        expr: |
+          histogram_quantile(
+            0.99,
+            sum by (le) (rate(worldgraph_compilation_artifact_items_bucket{kind="entity"}[15m]))
+          ) > 1500
+          or
+          histogram_quantile(
+            0.99,
+            sum by (le) (rate(worldgraph_compilation_artifact_items_bucket{kind="relationship"}[15m]))
+          ) > 6000
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: A compiled world artifact is unusually large for the closed-alpha limits.
+          runbook: docs/operations.md#stuck-or-failed-world-compilation
+
+      - alert: WorldGraphCompilationActivationInconsistent
+        expr: |
+          sum(increase(worldgraph_compilation_integrity_findings_total{check=~"activation_inconsistency|orphan"}[5m])) > 0
+        labels:
+          severity: critical
+        annotations:
+          summary: A compilation integrity check found an activation inconsistency or orphan seed data.
+          runbook: docs/operations.md#stuck-or-failed-world-compilation
+
+      - alert: WorldGraphCompilationDeterminismRegression
+        expr: |
+          sum(increase(worldgraph_compilation_integrity_findings_total{check=~"hash_mismatch|reproducibility_failure"}[5m])) > 0
+        labels:
+          severity: critical
+        annotations:
+          summary: Compiler input, artifact verification, or reproducibility integrity has regressed.
+          runbook: docs/operations.md#stuck-or-failed-world-compilation

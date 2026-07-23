@@ -1,0 +1,176 @@
+groups:
+  - name: worldgraph-simulation-v1
+    rules:
+      - alert: WorldGraphSimulationRunningWithoutAdvance
+        expr: max(worldgraph_simulation_running_stalled_worlds) > 0
+        for: 10m
+        labels:
+          metric_source: postgresql_reconciliation_exporter
+          severity: warning
+        annotations:
+          summary: One or more running worlds have not advanced within the expected cadence
+          runbook: docs/operations.md#simulation-controls-and-incidents
+          source: External PostgreSQL reconciliation exporter; not emitted by the worker
+
+      - alert: WorldGraphSimulationBacklogHigh
+        expr: max(worldgraph_simulation_backlog_ticks_max) > 256
+        for: 10m
+        labels:
+          metric_source: postgresql_reconciliation_exporter
+          severity: warning
+        annotations:
+          summary: A simulation clock has sustained catch-up backlog
+          runbook: docs/operations.md#simulation-controls-and-incidents
+          source: External PostgreSQL reconciliation exporter; not emitted by the worker
+
+      - alert: WorldGraphSimulationDueScheduleLate
+        expr: max(worldgraph_simulation_due_schedule_lag_ticks_max) > 1
+        for: 5m
+        labels:
+          metric_source: postgresql_reconciliation_exporter
+          severity: warning
+        annotations:
+          summary: A scheduled simulation action remains overdue
+          runbook: docs/operations.md#simulation-controls-and-incidents
+          source: External PostgreSQL reconciliation exporter; not emitted by the worker
+
+      - alert: WorldGraphSimulationDueLagHigh
+        expr: |
+          histogram_quantile(
+            0.95,
+            sum by (le) (rate(worldgraph_simulation_due_lag_ms_bucket[10m]))
+          ) > 60000
+          and
+          sum(increase(worldgraph_simulation_due_lag_ms_count[10m])) >= 5
+        for: 10m
+        labels:
+          metric_source: simulation_worker_otlp
+          severity: warning
+        annotations:
+          summary: Worker-observed simulation due lag p95 exceeds one minute
+          runbook: docs/operations.md#simulation-controls-and-incidents
+          source: Simulation worker OTLP metric worldgraph_simulation_due_lag_ms
+
+      - alert: WorldGraphSimulationFailureRetries
+        expr: sum(increase(worldgraph_simulation_retry_total[10m])) > 10
+        for: 5m
+        labels:
+          metric_source: simulation_worker_otlp
+          severity: warning
+        annotations:
+          summary: Simulation batches are repeatedly retrying
+          runbook: docs/operations.md#simulation-controls-and-incidents
+          source: Simulation worker OTLP metric worldgraph_simulation_retry_total
+
+      - alert: WorldGraphSimulationCommandTransactionSlow
+        expr: |
+          histogram_quantile(
+            0.95,
+            sum by (le) (
+              rate(worldgraph_simulation_command_duration_ms_bucket{operation="advance"}[10m])
+            )
+          ) > 2000
+          and
+          sum(increase(worldgraph_simulation_command_duration_ms_count{operation="advance"}[10m])) >= 5
+        for: 10m
+        labels:
+          metric_source: simulation_worker_otlp
+          severity: warning
+        annotations:
+          summary: Authoritative simulation advance transaction-path p95 exceeds two seconds
+          runbook: docs/operations.md#simulation-controls-and-incidents
+          source: Simulation worker OTLP metric worldgraph_simulation_command_duration_ms
+
+      - alert: WorldGraphSimulationQueueWakeOld
+        expr: |
+          histogram_quantile(
+            0.95,
+            sum by (le) (rate(worldgraph_simulation_queue_wake_age_ms_bucket[10m]))
+          ) > 30000
+          and
+          sum(increase(worldgraph_simulation_queue_wake_age_ms_count[10m])) >= 5
+        for: 10m
+        labels:
+          metric_source: simulation_worker_otlp
+          severity: warning
+        annotations:
+          summary: BullMQ simulation wake hints are arriving more than 30 seconds late
+          runbook: docs/operations.md#simulation-controls-and-incidents
+          source: Simulation worker OTLP metric worldgraph_simulation_queue_wake_age_ms
+
+      - alert: WorldGraphSimulationWorkerFailures
+        expr: sum(increase(worldgraph_simulation_run_total{outcome="failed"}[10m])) > 3
+        for: 5m
+        labels:
+          metric_source: simulation_worker_otlp
+          severity: warning
+        annotations:
+          summary: Simulation worker runs are repeatedly terminating as failed
+          runbook: docs/operations.md#simulation-controls-and-incidents
+          source: Simulation worker OTLP metric worldgraph_simulation_run_total
+
+      - alert: WorldGraphSimulationProcessFailures
+        expr: sum(increase(worldgraph_simulation_process_failures_total[10m])) > 3
+        for: 5m
+        labels:
+          metric_source: simulation_worker_otlp
+          severity: warning
+        annotations:
+          summary: Deterministic simulation processes are repeatedly reaching terminal failure
+          runbook: docs/operations.md#simulation-controls-and-incidents
+          source: Simulation worker OTLP metric worldgraph_simulation_process_failures_total
+
+      - alert: WorldGraphSimulationAutoPaused
+        expr: sum(increase(worldgraph_simulation_run_total{outcome="auto_paused"}[5m])) > 0
+        for: 1m
+        labels:
+          metric_source: simulation_worker_otlp
+          severity: critical
+        annotations:
+          summary: A world clock auto-paused after bounded process failure
+          runbook: docs/operations.md#simulation-controls-and-incidents
+          source: Simulation worker OTLP metric worldgraph_simulation_run_total
+
+      - alert: WorldGraphSimulationLeaseChurn
+        expr: sum(increase(worldgraph_simulation_fencing_loss_total[10m])) > 5
+        for: 5m
+        labels:
+          metric_source: simulation_worker_otlp
+          severity: warning
+        annotations:
+          summary: Simulation workers are repeatedly losing PostgreSQL fencing authority
+          runbook: docs/operations.md#simulation-controls-and-incidents
+          source: Simulation worker OTLP metric worldgraph_simulation_fencing_loss_total
+
+      - alert: WorldGraphSimulationLeaseContentionHigh
+        expr: sum(increase(worldgraph_simulation_lease_contention_total[10m])) > 20
+        for: 5m
+        labels:
+          metric_source: simulation_worker_otlp
+          severity: warning
+        annotations:
+          summary: Simulation workers are repeatedly contending for PostgreSQL leases
+          runbook: docs/operations.md#simulation-controls-and-incidents
+          source: Simulation worker OTLP metric worldgraph_simulation_lease_contention_total
+
+      - alert: WorldGraphSimulationOutcomeMismatch
+        expr: sum(increase(worldgraph_simulation_outcome_mismatch_total[5m])) > 0
+        for: 1m
+        labels:
+          metric_source: postgresql_reconciliation_exporter
+          severity: critical
+        annotations:
+          summary: A deterministic simulation outcome or projection checksum diverged
+          runbook: docs/operations.md#simulation-controls-and-incidents
+          source: External PostgreSQL reconciliation exporter; not emitted by the worker
+
+      - alert: WorldGraphSimulationWakeDegraded
+        expr: min(worldgraph_simulation_wake_available) == 0
+        for: 5m
+        labels:
+          metric_source: simulation_worker_otlp
+          severity: warning
+        annotations:
+          summary: Automatic simulation wakes are unavailable; PostgreSQL authority remains intact
+          runbook: docs/operations.md#simulation-controls-and-incidents
+          source: Simulation worker OTLP metric worldgraph_simulation_wake_available

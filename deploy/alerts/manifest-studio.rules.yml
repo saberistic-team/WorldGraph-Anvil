@@ -1,0 +1,72 @@
+groups:
+  - name: worldgraph-manifest-studio
+    rules:
+      - alert: WorldGraphManifestGenerationQueueWaitHigh
+        expr: |
+          histogram_quantile(
+            0.95,
+            sum by (le) (rate(worldgraph_manifest_generation_queue_wait_ms_bucket[10m]))
+          ) > 300000
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: Manifest generation p95 queue wait has exceeded five minutes.
+          runbook: docs/manifest-generation.md#operator-runbook
+
+      - alert: WorldGraphManifestGenerationFailures
+        expr: |
+          (
+            sum(rate(worldgraph_manifest_generation_runs_total{outcome="failed"}[10m]))
+            /
+            clamp_min(sum(rate(worldgraph_manifest_generation_runs_total[10m])), 0.001)
+          ) > 0.2
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: More than twenty percent of manifest generation runs are failing.
+          runbook: docs/manifest-generation.md#operator-runbook
+
+      - alert: WorldGraphManifestFallbackSpike
+        expr: |
+          (
+            sum(rate(worldgraph_manifest_generation_runs_total{mode="fallback",outcome="succeeded"}[15m]))
+            /
+            clamp_min(sum(rate(worldgraph_manifest_generation_runs_total{outcome="succeeded"}[15m])), 0.001)
+          ) > 0.8
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: Manifest generation is unexpectedly dominated by fallback execution.
+          runbook: docs/manifest-generation.md#operator-runbook
+
+      - alert: WorldGraphManifestCostCeiling
+        expr: |
+          sum(increase(worldgraph_manifest_generation_cost_microunits_sum[1h])) > 1000000
+        labels:
+          severity: critical
+        annotations:
+          summary: Manifest provider estimated cost exceeded the closed-alpha hourly ceiling.
+          runbook: docs/manifest-generation.md#operator-runbook
+
+      - alert: WorldGraphManifestValidatorErrorSpike
+        expr: |
+          sum(rate(worldgraph_manifest_validation_diagnostics_total{severity="error"}[10m])) > 1
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: Manifest validation errors are arriving above the expected closed-alpha rate.
+          runbook: docs/manifests.md#validation-and-diagnostics
+
+      - alert: WorldGraphManifestStaleConflicts
+        expr: |
+          sum(rate(worldgraph_manifest_stale_conflicts_total[10m])) > 0.2
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: Manifest edit or approval stale-version conflicts are elevated.
+          runbook: docs/manifest-generation.md#operator-runbook

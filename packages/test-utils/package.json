@@ -1,0 +1,20 @@
+{
+  "name": "@worldgraph/test-utils",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "build": "tsup src/index.ts --format esm --dts --clean",
+    "clean": "rm -rf dist",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@worldgraph/contracts": "workspace:*"
+  },
+  "devDependencies": {
+    "tsup": "catalog:"
+  }
+}

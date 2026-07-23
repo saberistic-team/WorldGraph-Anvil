@@ -1,0 +1,35 @@
+{
+  "name": "@worldgraph/db",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "build": "tsup src/index.ts --format esm --dts --clean",
+    "bootstrap": "tsx src/cli/bootstrap.ts",
+    "clean": "rm -rf dist",
+    "economy": "tsx src/cli/operator.ts economy",
+    "generate": "drizzle-kit generate",
+    "migrate": "tsx src/cli/migrate.ts",
+    "migration:check": "tsx src/cli/check-migrations.ts",
+    "ledger": "tsx src/cli/operator.ts ledger",
+    "outbox": "tsx src/cli/operator.ts outbox",
+    "projection": "tsx src/cli/operator.ts projection",
+    "seed:primitives": "tsx src/cli/seed-primitives.ts",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@worldgraph/catalog": "workspace:*",
+    "@worldgraph/contracts": "workspace:*",
+    "@worldgraph/ledger": "workspace:*",
+    "drizzle-orm": "catalog:",
+    "pg": "catalog:"
+  },
+  "devDependencies": {
+    "@types/pg": "8.20.0",
+    "drizzle-kit": "0.31.10",
+    "tsup": "catalog:"
+  }
+}
