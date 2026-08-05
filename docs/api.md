@@ -102,7 +102,7 @@ Manifest-specific stable failures include `MANIFEST_GENERATION_DISABLED`, `GENER
 
 ## Compilation and read-only WorldGraph
 
-Compilation routes use current contract/runtime schema 9, compiler `1.2.0`, compiler configuration/WorldGraph/queue schema 1, and artifact schema 3. Exact compiler `1.1.0`/artifact-2 and compiler `1.0.0`/artifact-1 verifiers remain available for stored worlds but are not selected for new compilations. A manifest approval remains inert until the creator explicitly starts compilation. Compilation is available only before first activation and always rebuilds exact authoritative input server-side; a request cannot provide artifact, graph, primitive, member, adapter, or economy-plan data.
+Compilation routes use current contract/runtime schema 10, compiler `1.3.0`, compiler configuration/WorldGraph/queue schema 1, and artifact schema 4. Exact compiler `1.2.0`/artifact-3, compiler `1.1.0`/artifact-2, and compiler `1.0.0`/artifact-1 verifiers remain available for stored worlds but are not selected for new compilations. A manifest approval remains inert until the creator explicitly starts compilation. Compilation is available only before first activation and always rebuilds exact authoritative input server-side; a request cannot provide artifact, graph, primitive, member, adapter, economy-plan, or governance-plan data.
 
 Creator mutations require the common session, exact Origin/CSRF, JSON, `Idempotency-Key`, and current expected values:
 
@@ -115,7 +115,7 @@ An identical idempotency replay returns its recorded response. Reusing a key for
 Every active member may use these world-scoped reads:
 
 - `GET /api/v1/worlds/:id/compilations/:runId` and `/diagnostics` expose ordered bounded diagnostics, stages, hashes, versions, row version, and safe timestamps/status.
-- `GET /api/v1/worlds/:id/compilations/:runId/artifact` reconstructs the complete verified content-addressed artifact for a successful scoped run: native compiler `1.2.0` returns `CompiledArtifactV3`, retained compiler `1.1.0` returns exact `CompiledArtifactV2`, and retained compiler `1.0.0` returns exact `CompiledArtifactV1`. Response serialization preserves every hashed field, including the matching economy seed plan and plan hash where present.
+- `GET /api/v1/worlds/:id/compilations/:runId/artifact` reconstructs the complete verified content-addressed artifact for a successful scoped run: native compiler `1.3.0` returns `CompiledArtifactV4`, retained compiler `1.2.0` returns exact `CompiledArtifactV3`, retained compiler `1.1.0` returns exact `CompiledArtifactV2`, and retained compiler `1.0.0` returns exact `CompiledArtifactV1`. Response serialization preserves every hashed field, including matching economy and governance seed plans and plan hashes where present.
 - `GET /api/v1/worlds/:id/runtime-summary` returns lifecycle, active design version, manifest/compiler/schema/seed/artifact identity, graph/controller counts, state revision, and last ledger sequence.
 - `GET /api/v1/worlds/:id/entities`, `/entities/:logicalKey`, `/relationships`, and `/entities/:logicalKey/neighbors` return the authoritative relational graph. Lists and one-hop neighbors accept only contract-allowlisted filters and a maximum limit of 100. HMAC cursors bind world, kind, and normalized filters; there is no arbitrary recursion or unbounded JSON query.
 
@@ -209,7 +209,7 @@ Stable economy rejections include `ECONOMY_NOT_INITIALIZED`, `ECONOMY_ALREADY_IN
 
 ## Productive commerce
 
-Contract/runtime schema 9 retains API v1 and adds schema-1 resource, recipe, inventory/reservation, business/facility, employment/work/payroll, production, fixed-price listing/trade, tax/treasury, and commerce-expansion contracts. Economy reconciliation advances to schema 2. Compiler `1.2.0`/artifact 3/economy seed plan 2 is the only native commerce-initialization lane; exact compiler `1.1.0`/artifact 2/plan 1 and `1.0.0`/artifact 1 remain readable/verifiable but do not gain M09 state implicitly.
+Contract/runtime schema 9 introduced schema-1 resource, recipe, inventory/reservation, business/facility, employment/work/payroll, production, fixed-price listing/trade, tax/treasury, and commerce-expansion contracts with economy reconciliation schema 2. The sealed M10 head retains those commerce contracts and advances expansion reconciliation to schema 3 (schemas 2 and 1 retained) so governed tax-policy lineage can be compared. Compiler `1.2.0`/artifact 3/economy seed plan 2 remains the commerce-initialization lane inside later native artifact chains; exact compiler `1.1.0`/artifact 2/plan 1 and `1.0.0`/artifact 1 remain readable/verifiable but do not gain M09 state implicitly.
 
 Every quantity is a canonical decimal string at the resource's declared scale. Every price, wage, gross, fee, tax, net, and treasury amount remains a canonical currency minor-unit integer string. Purchase preview is informational: commands accept identity, quantity, and optimistic concurrency data, while the server reloads and recomputes price, tick, ownership, output, wage, policy, and settlement. Responses retain `noCashValue: true` and `cashOutAllowed: false` and expose no external payment or redemption path.
 
@@ -257,9 +257,22 @@ The worker now derives those invalidations from committed commerce domain facts 
 
 Dead-outbox retry is likewise not an HTTP API. The reviewed `pnpm outbox retry` owner workflow appends a private retry intent and requeues the same terminal message without changing its event identity or resetting attempts; see `operations.md`. API, browser, and ordinary worker credentials cannot call its database function or read its private reason.
 
+## Geography, visual scene plans, and Explore
+
+Contract/runtime schema 11 retains API v1 and advances native compilation to compiler `1.4.0`/artifact 5 with `GeographySeedPlanV1`. Exact compiler `1.3.0`/artifact 4 (governance), `1.2.0`/artifact 3, `1.1.0`/artifact 2, and `1.0.0`/artifact 1 remain verification lanes. Artifact `VisualPlanV1` remains design-intent layout only. PostGIS owns spatial truth; `VisualScenePlanV1` is a replaceable projection. Existing active worlds receive no inferred geography.
+
+Creator mutations require session, Origin, CSRF, and JSON. Members may read:
+
+- `GET /api/v1/worlds/:id/geography` — bounded bbox/layer/version snapshot with ETag;
+- `GET /api/v1/worlds/:id/visual-scene-plan` — published checksummed scene plan;
+- `GET /api/v1/worlds/:id/spatial/entities/:entityId` — one entity by stable or logical key;
+- `GET /api/v1/worlds/:id/spawn-points` and `POST .../spawn-points/resolve` — server-validated spawn.
+
+Creator routes `POST .../geography/initialize` and `POST .../geography/visual-scene-plan` materialize the native seed plan and publish an idempotent scene plan. They enqueue durable `GeographyInvalidationV1` outbox messages that publish Redis invalidations `geography.version.published` and `visual-plan.published` (cursor/version/checksum only). Full command-bus ledger envelopes for geography remain a retained hardening item; clients never treat WebGL transforms as authority.
+
 ## Governance, proposals, ballots, and elections
 
-Contract/runtime schema 10 retains API v1 and adds governance schema 1, policy DSL 1, tally/result algorithms 1, and simulation process registry 3. Compiler `1.3.0`/artifact 4 emits the native governance seed plan; exact compiler `1.2.0`/artifact 3, `1.1.0`/artifact 2, and `1.0.0`/artifact 1 remain explicit verification lanes. Existing active worlds receive no silent charter or election state.
+Contract/runtime schema 10 retained API v1 and added governance schema 1, policy DSL 1, tally/result algorithms 1, and simulation process registry 3. The sealed M11 head keeps those axes and advances the native compiler lane to `1.4.0`/artifact 5; exact compiler `1.3.0`/artifact 4, `1.2.0`/artifact 3, `1.1.0`/artifact 2, and `1.0.0`/artifact 1 remain verification lanes. Existing active worlds receive no silent charter or election state.
 
 `POST /api/v1/worlds/:id/commands` additionally accepts these public schema-1 variants:
 

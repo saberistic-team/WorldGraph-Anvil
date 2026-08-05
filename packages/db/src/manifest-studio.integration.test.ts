@@ -246,11 +246,11 @@ describe('manifest studio database contract', () => {
 
   it('installs the M04 schema with exact compatibility metadata and no production world data', async () => {
     await expect(readRuntimeVersions(client.pool)).resolves.toMatchObject({
-      compiler: '1.3.0',
-      contracts: 10,
+      compiler: '1.4.0',
+      contracts: 11,
       manifestSchema: 1,
       primitiveSchema: 1,
-      runtimeSchema: 10,
+      runtimeSchema: 11,
     });
     const tables = await client.pool.query<{ table_name: string }>(
       `select table_name from information_schema.tables
@@ -401,11 +401,11 @@ describe('manifest studio database contract', () => {
 
       await migrate(upgrade.db, { migrationsFolder: migrationRoot });
       await expect(readRuntimeVersions(upgrade.pool)).resolves.toMatchObject({
-        compiler: '1.3.0',
-        contracts: 10,
+        compiler: '1.4.0',
+        contracts: 11,
         manifestSchema: 1,
         primitiveSchema: 1,
-        runtimeSchema: 10,
+        runtimeSchema: 11,
       });
       const after = await upgrade.pool.query<{
         manifest_rows: string;

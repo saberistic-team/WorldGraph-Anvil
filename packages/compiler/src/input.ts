@@ -2,6 +2,7 @@ import { primitiveContentHash, primitiveSemanticDocument } from '@worldgraph/cat
 import {
   COMPILER_CONFIG_SCHEMA_VERSION,
   COMPILER_VERSION,
+  GOVERNANCE_COMPILER_VERSION,
   MANIFEST_SCHEMA_VERSION,
   LEGACY_COMPILER_VERSION,
   PREVIOUS_COMPILER_VERSION,
@@ -12,6 +13,7 @@ import {
   type CompilerConfigurationV1,
   type CompilerInputBundleV1,
   type ExactPrimitiveInputV1,
+  type GovernanceCompilerInputBundleV1,
   type LegacyCompilerInputBundleV1,
   type PreviousCompilerInputBundleV1,
   type RetainedCompilerInputBundleV1,
@@ -124,6 +126,19 @@ export function createPreviousCompilerInputBundle(
   const provisional: PreviousCompilerInputBundleV1 = {
     ...current,
     compilerVersion: PREVIOUS_COMPILER_VERSION,
+    inputHash: '0'.repeat(64),
+  };
+  return { ...provisional, inputHash: compilerInputHash(provisional) };
+}
+
+/** Produces the frozen 1.3 input identity for artifact-4 compatibility. */
+export function createGovernanceCompilerInputBundle(
+  options: CreateCompilerInputBundleOptions,
+): GovernanceCompilerInputBundleV1 {
+  const current = createCompilerInputBundle(options);
+  const provisional: GovernanceCompilerInputBundleV1 = {
+    ...current,
+    compilerVersion: GOVERNANCE_COMPILER_VERSION,
     inputHash: '0'.repeat(64),
   };
   return { ...provisional, inputHash: compilerInputHash(provisional) };

@@ -6522,3 +6522,165 @@ export const governanceTaxPolicyLineage = pgTable('governance_tax_policy_lineage
   checksum: bytea('checksum').notNull(),
   createdAt: timestamptz('created_at').defaultNow().notNull(),
 });
+
+const geometry = customType<{ data: string }>({
+  dataType: () => 'geometry',
+});
+
+export const spatialReferenceSystems = pgTable('spatial_reference_systems', {
+  worldId: uuid('world_id').primaryKey().notNull(),
+  units: text().notNull(),
+  originXMilli: bigint('origin_x_milli', { mode: 'bigint' }).notNull(),
+  originYMilli: bigint('origin_y_milli', { mode: 'bigint' }).notNull(),
+  boundsMinXMilli: bigint('bounds_min_x_milli', { mode: 'bigint' }).notNull(),
+  boundsMinYMilli: bigint('bounds_min_y_milli', { mode: 'bigint' }).notNull(),
+  boundsMaxXMilli: bigint('bounds_max_x_milli', { mode: 'bigint' }).notNull(),
+  boundsMaxYMilli: bigint('bounds_max_y_milli', { mode: 'bigint' }).notNull(),
+  srid: integer().notNull(),
+  geographyVersion: bigint('geography_version', { mode: 'bigint' }).notNull(),
+  seedPlanHash: bytea('seed_plan_hash').notNull(),
+  sourceArtifactHash: bytea('source_artifact_hash').notNull(),
+  compiledWorldVersionId: uuid('compiled_world_version_id').notNull(),
+  createdCommandId: uuid('created_command_id').notNull(),
+  createdEventId: uuid('created_event_id').notNull(),
+  createdStateRevision: bigint('created_state_revision', { mode: 'bigint' }).notNull(),
+  createdAt: timestamptz('created_at').defaultNow().notNull(),
+});
+
+export const worldGeographyHeads = pgTable('world_geography_heads', {
+  worldId: uuid('world_id').primaryKey().notNull(),
+  geographyVersion: bigint('geography_version', { mode: 'bigint' }).default(0n).notNull(),
+  geographyStateRevision: bigint('geography_state_revision', { mode: 'bigint' })
+    .default(0n)
+    .notNull(),
+  seedPlanHash: bytea('seed_plan_hash'),
+  activeScenePlanId: uuid('active_scene_plan_id'),
+  activeScenePlanChecksum: bytea('active_scene_plan_checksum'),
+  initializedAt: timestamptz('initialized_at'),
+  updatedAt: timestamptz('updated_at').defaultNow().notNull(),
+});
+
+export const territories = pgTable('territories', {
+  id: uuid().primaryKey().notNull(),
+  worldId: uuid('world_id').notNull(),
+  stableKey: citext('stable_key').notNull(),
+  entityLogicalKey: citext('entity_logical_key'),
+  geom: geometry().notNull(),
+  geographyVersion: bigint('geography_version', { mode: 'bigint' }).notNull(),
+  createdCommandId: uuid('created_command_id').notNull(),
+  createdAt: timestamptz('created_at').defaultNow().notNull(),
+});
+
+export const districtsSpatial = pgTable('districts', {
+  id: uuid().primaryKey().notNull(),
+  worldId: uuid('world_id').notNull(),
+  territoryId: uuid('territory_id').notNull(),
+  stableKey: citext('stable_key').notNull(),
+  entityLogicalKey: citext('entity_logical_key'),
+  zoning: text().notNull(),
+  geom: geometry().notNull(),
+  geographyVersion: bigint('geography_version', { mode: 'bigint' }).notNull(),
+  createdCommandId: uuid('created_command_id').notNull(),
+  createdAt: timestamptz('created_at').defaultNow().notNull(),
+});
+
+export const parcels = pgTable('parcels', {
+  id: uuid().primaryKey().notNull(),
+  worldId: uuid('world_id').notNull(),
+  districtId: uuid('district_id').notNull(),
+  stableKey: citext('stable_key').notNull(),
+  parcelType: text('parcel_type').notNull(),
+  geom: geometry().notNull(),
+  geographyVersion: bigint('geography_version', { mode: 'bigint' }).notNull(),
+  createdCommandId: uuid('created_command_id').notNull(),
+  createdAt: timestamptz('created_at').defaultNow().notNull(),
+});
+
+export const roads = pgTable('roads', {
+  id: uuid().primaryKey().notNull(),
+  worldId: uuid('world_id').notNull(),
+  stableKey: citext('stable_key').notNull(),
+  roadClass: text('road_class').notNull(),
+  widthMilli: bigint('width_milli', { mode: 'bigint' }).notNull(),
+  fromDistrictId: uuid('from_district_id').notNull(),
+  toDistrictId: uuid('to_district_id').notNull(),
+  geom: geometry().notNull(),
+  geographyVersion: bigint('geography_version', { mode: 'bigint' }).notNull(),
+  createdCommandId: uuid('created_command_id').notNull(),
+  createdAt: timestamptz('created_at').defaultNow().notNull(),
+});
+
+export const buildingPlacements = pgTable('building_placements', {
+  id: uuid().primaryKey().notNull(),
+  worldId: uuid('world_id').notNull(),
+  parcelId: uuid('parcel_id').notNull(),
+  stableKey: citext('stable_key').notNull(),
+  entityLogicalKey: citext('entity_logical_key').notNull(),
+  archetype: text().notNull(),
+  centroid: geometry().notNull(),
+  footprint: geometry().notNull(),
+  elevationMilli: bigint('elevation_milli', { mode: 'bigint' }).notNull(),
+  yawMilliDegrees: integer('yaw_milli_degrees').notNull(),
+  geographyVersion: bigint('geography_version', { mode: 'bigint' }).notNull(),
+  createdCommandId: uuid('created_command_id').notNull(),
+  createdAt: timestamptz('created_at').defaultNow().notNull(),
+});
+
+export const pointsOfInterest = pgTable('points_of_interest', {
+  id: uuid().primaryKey().notNull(),
+  worldId: uuid('world_id').notNull(),
+  stableKey: citext('stable_key').notNull(),
+  entityLogicalKey: citext('entity_logical_key').notNull(),
+  kind: text().notNull(),
+  location: geometry().notNull(),
+  radiusMilli: bigint('radius_milli', { mode: 'bigint' }).notNull(),
+  geographyVersion: bigint('geography_version', { mode: 'bigint' }).notNull(),
+  createdCommandId: uuid('created_command_id').notNull(),
+  createdAt: timestamptz('created_at').defaultNow().notNull(),
+});
+
+export const spawnPoints = pgTable('spawn_points', {
+  id: uuid().primaryKey().notNull(),
+  worldId: uuid('world_id').notNull(),
+  stableKey: citext('stable_key').notNull(),
+  location: geometry().notNull(),
+  radiusMilli: bigint('radius_milli', { mode: 'bigint' }).notNull(),
+  priority: integer().notNull(),
+  accessPolicy: text('access_policy').notNull(),
+  active: boolean().default(true).notNull(),
+  geographyVersion: bigint('geography_version', { mode: 'bigint' }).notNull(),
+  createdCommandId: uuid('created_command_id').notNull(),
+  createdAt: timestamptz('created_at').defaultNow().notNull(),
+});
+
+export const visualScenePlans = pgTable('visual_scene_plans', {
+  id: uuid().primaryKey().notNull(),
+  worldId: uuid('world_id').notNull(),
+  geographyVersion: bigint('geography_version', { mode: 'bigint' }).notNull(),
+  styleKitVersion: integer('style_kit_version').notNull(),
+  compilerVersion: text('compiler_version').notNull(),
+  seed: text().notNull(),
+  canonicalJson: jsonb('canonical_json').notNull(),
+  checksum: bytea().notNull(),
+  status: text().notNull(),
+  warnings: jsonb()
+    .default(sql`'[]'::jsonb`)
+    .notNull(),
+  provenance: jsonb().notNull(),
+  publishedTick: bigint('published_tick', { mode: 'bigint' }).notNull(),
+  createdCommandId: uuid('created_command_id').notNull(),
+  createdEventId: uuid('created_event_id').notNull(),
+  createdStateRevision: bigint('created_state_revision', { mode: 'bigint' }).notNull(),
+  createdAt: timestamptz('created_at').defaultNow().notNull(),
+});
+
+export const visualAssetCatalog = pgTable('visual_asset_catalog', {
+  assetId: citext('asset_id').primaryKey().notNull(),
+  schemaVersion: integer('schema_version').notNull(),
+  uriReference: text('uri_reference').notNull(),
+  contentHash: bytea('content_hash').notNull(),
+  license: text().notNull(),
+  provenance: text().notNull(),
+  maxBytes: integer('max_bytes').notNull(),
+  createdAt: timestamptz('created_at').defaultNow().notNull(),
+});

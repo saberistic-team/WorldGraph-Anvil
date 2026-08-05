@@ -2,7 +2,7 @@
 
 Milestone 10 is complete and sealed as of August 5, 2026 EDT. Its canonical record is [`10-governance-laws-proposals-voting-elections-state.md`](./10-governance-laws-proposals-voting-elections-state.md). This handoff authorizes Milestone 11; later milestones remain sequentially gated by their immediate predecessor.
 
-The compatibility head is API v1; contract/runtime 10; native compiler `1.3.0` with artifact schema 4, economy seed-plan schema 2, and governance seed-plan schema 1; exact retained compiler `1.2.0`/artifact 3/plan 2, `1.1.0`/artifact 2/plan 1, and `1.0.0`/artifact 1 verification; governance/policy schemas 1; proposal tally `proposal_yes_no_v1` and election tally `election_plurality_v1`; and simulation process registry 3 with schedule/process/action/PRNG schemas unchanged at 1.
+The compatibility head is API v1; contract/runtime 10; native compiler `1.3.0` with artifact schema 4, economy seed-plan schema 2, and governance seed-plan schema 1; economy reconciliation schema 3 with schemas 2 and 1 retained; exact retained compiler `1.2.0`/artifact 3/plan 2, `1.1.0`/artifact 2/plan 1, and `1.0.0`/artifact 1 verification; governance/policy schemas 1; proposal tally `proposal_yes_no_v1` and election tally `election_plurality_v1`; and simulation process registry 3 with schedule/process/action/PRNG schemas unchanged at 1.
 
 The sealed native golden is:
 

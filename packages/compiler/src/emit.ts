@@ -2,32 +2,33 @@ import {
   COMPILED_ARTIFACT_SCHEMA_VERSION,
   COMPILER_CONFIG_SCHEMA_VERSION,
   COMPILER_VERSION,
-  CompiledArtifactV4Schema,
+  CompiledArtifactV5Schema,
   MANIFEST_SCHEMA_VERSION,
   WORLD_GRAPH_SCHEMA_VERSION,
   WorldEntityStatePairV1Validator,
   WorldRelationshipAttributesPairV1Validator,
   canonicalJson,
   createValidator,
-  type CompiledArtifactV4,
-  type CompiledWorldV4,
+  type CompiledArtifactV5,
+  type CompiledWorldV5,
   type CompilerDiagnosticV1,
 } from '@worldgraph/contracts';
 
 import { compilerDiagnostic, sortCompilerDiagnostics } from './diagnostics.js';
 import { deriveLoweredEconomySeedPlanV2 } from './economy-seed.js';
+import { deriveLoweredGeographySeedPlanV1 } from './geography-seed.js';
 import { deriveLoweredGovernanceSeedPlanV1 } from './governance-seed.js';
 import { compiledArtifactHash } from './hash.js';
 import { validateCompiledWorldSemantics } from './invariants.js';
 import type { LoweredWorld, StageResult } from './types.js';
 
-const artifactValidator = createValidator<CompiledArtifactV4>(CompiledArtifactV4Schema);
+const artifactValidator = createValidator<CompiledArtifactV5>(CompiledArtifactV5Schema);
 
 function compareText(left: string, right: string): number {
   return left < right ? -1 : left > right ? 1 : 0;
 }
 
-export function emitCompiledArtifact(lowered: LoweredWorld): StageResult<CompiledArtifactV4> {
+export function emitCompiledArtifact(lowered: LoweredWorld): StageResult<CompiledArtifactV5> {
   const economySeedPlan = deriveLoweredEconomySeedPlanV2(lowered);
   if (!economySeedPlan.value) {
     return { diagnostics: economySeedPlan.diagnostics, value: null };
@@ -36,7 +37,11 @@ export function emitCompiledArtifact(lowered: LoweredWorld): StageResult<Compile
   if (!governanceSeedPlan.value) {
     return { diagnostics: governanceSeedPlan.diagnostics, value: null };
   }
-  const world: CompiledWorldV4 = {
+  const geographySeedPlan = deriveLoweredGeographySeedPlanV1(lowered);
+  if (!geographySeedPlan.value) {
+    return { diagnostics: geographySeedPlan.diagnostics, value: null };
+  }
+  const world: CompiledWorldV5 = {
     artifactSchemaVersion: COMPILED_ARTIFACT_SCHEMA_VERSION,
     compilerConfigVersion: COMPILER_CONFIG_SCHEMA_VERSION,
     compilerVersion: COMPILER_VERSION,
@@ -53,6 +58,8 @@ export function emitCompiledArtifact(lowered: LoweredWorld): StageResult<Compile
     ),
     economySeedPlan: economySeedPlan.value.plan,
     economySeedPlanHash: economySeedPlan.value.hash,
+    geographySeedPlan: geographySeedPlan.value.plan,
+    geographySeedPlanHash: geographySeedPlan.value.hash,
     governanceSeedPlan: governanceSeedPlan.value.plan,
     governanceSeedPlanHash: governanceSeedPlan.value.hash,
     inputHash: lowered.normalized.bundle.inputHash,
@@ -71,7 +78,7 @@ export function emitCompiledArtifact(lowered: LoweredWorld): StageResult<Compile
     return { diagnostics: semanticDiagnostics, value: null };
   }
   const canonicalBytes = canonicalJson(world);
-  const artifact: CompiledArtifactV4 = {
+  const artifact: CompiledArtifactV5 = {
     artifactKind: 'compiled_world',
     artifactSchemaVersion: COMPILED_ARTIFACT_SCHEMA_VERSION,
     canonicalBytes,

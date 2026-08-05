@@ -15,7 +15,7 @@ import {
 import {
   COMPILED_ARTIFACT_SCHEMA_VERSION,
   COMPILER_VERSION,
-  type CompiledArtifactV4,
+  type CompiledArtifactV5,
 } from '@worldgraph/contracts';
 import {
   createDeterministicGovernedHarborCityFallback,
@@ -53,7 +53,7 @@ const authentication: CompilerRouteAuthentication = {
   mutation: async () => actor,
 };
 
-function currentCompiledArtifact(): CompiledArtifactV4 {
+function currentCompiledArtifact(): CompiledArtifactV5 {
   const fallback = createDeterministicGovernedHarborCityFallback({
     catalog: governedHarborCityManifestCatalog(),
     prompt:
@@ -252,7 +252,7 @@ describe('compiler routes', () => {
       method: 'GET',
       url: `/api/v1/worlds/${worldId}/compilations/${runId}/artifact`,
     });
-    const serialized = response.json<CompiledArtifactV4>();
+    const serialized = response.json<CompiledArtifactV5>();
 
     expect(response.statusCode, response.body).toBe(200);
     expect(serialized).toEqual(artifact);

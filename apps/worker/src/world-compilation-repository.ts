@@ -3,6 +3,8 @@ import type { Pool, PoolClient, QueryResultRow } from 'pg';
 import {
   canonicalJson,
   COMPILED_ARTIFACT_SCHEMA_VERSION,
+  GOVERNANCE_COMPILED_ARTIFACT_SCHEMA_VERSION,
+  GOVERNANCE_COMPILER_VERSION,
   COMPILER_VERSION,
   PREVIOUS_COMPILED_ARTIFACT_SCHEMA_VERSION,
   PREVIOUS_COMPILER_VERSION,
@@ -11,8 +13,10 @@ import {
   type CompiledArtifactV2,
   type CompiledArtifactV3,
   type CompiledArtifactV4,
+  type CompiledArtifactV5,
   type CompilerDiagnosticV1,
   type CompilerInputBundleV1,
+  type GovernanceCompilerInputBundleV1,
   type PreviousCompilerInputBundleV1,
   type PrimitiveDraftInput,
   type RetainedCompilerInputBundleV1,
@@ -73,10 +77,13 @@ export interface WorldActivationResult {
 }
 
 export type ActivatableCompilerInputBundle =
-  CompilerInputBundleV1 | PreviousCompilerInputBundleV1 | RetainedCompilerInputBundleV1;
+  | CompilerInputBundleV1
+  | GovernanceCompilerInputBundleV1
+  | PreviousCompilerInputBundleV1
+  | RetainedCompilerInputBundleV1;
 
 export type ActivatableCompiledArtifact =
-  CompiledArtifactV2 | CompiledArtifactV3 | CompiledArtifactV4;
+  CompiledArtifactV2 | CompiledArtifactV3 | CompiledArtifactV4 | CompiledArtifactV5;
 
 /**
  * Persistence boundary used by the deterministic compiler runner. Keeping the
@@ -215,7 +222,9 @@ export async function persistCompiledSeedPlansInActivationTransaction(
           compilerVersion:
             artifact.artifactSchemaVersion === PREVIOUS_COMPILED_ARTIFACT_SCHEMA_VERSION
               ? PREVIOUS_COMPILER_VERSION
-              : COMPILER_VERSION,
+              : artifact.artifactSchemaVersion === GOVERNANCE_COMPILED_ARTIFACT_SCHEMA_VERSION
+                ? GOVERNANCE_COMPILER_VERSION
+                : COMPILER_VERSION,
           planSchemaVersion: 2,
           sourceKind: 'compiler_1_2',
         };
@@ -246,7 +255,15 @@ export async function persistCompiledSeedPlansInActivationTransaction(
     ],
   );
 
-  if (artifact.artifactSchemaVersion !== COMPILED_ARTIFACT_SCHEMA_VERSION) return;
+  if (
+    artifact.artifactSchemaVersion !== COMPILED_ARTIFACT_SCHEMA_VERSION &&
+    artifact.artifactSchemaVersion !== GOVERNANCE_COMPILED_ARTIFACT_SCHEMA_VERSION
+  ) {
+    return;
+  }
+  if (!('governanceSeedPlan' in artifact.world) || !artifact.world.governanceSeedPlan) {
+    return;
+  }
   await client.query(
     `insert into compiled_governance_seed_plans(
        id, world_id, world_version_id, source_kind, source_compiler_version,
@@ -260,7 +277,9 @@ export async function persistCompiledSeedPlansInActivationTransaction(
       nextId(),
       identity.worldId,
       identity.worldVersionId,
-      COMPILER_VERSION,
+      artifact.artifactSchemaVersion === COMPILED_ARTIFACT_SCHEMA_VERSION
+        ? COMPILER_VERSION
+        : GOVERNANCE_COMPILER_VERSION,
       artifact.contentHash,
       JSON.stringify(artifact.world.governanceSeedPlan),
       artifact.world.governanceSeedPlanHash,
@@ -427,12 +446,17 @@ export class PostgresWorldCompilationRepository implements WorldCompilationRepos
       bundle.compilerVersion === PREVIOUS_COMPILER_VERSION &&
       artifact.artifactSchemaVersion === PREVIOUS_COMPILED_ARTIFACT_SCHEMA_VERSION &&
       artifact.world.compilerVersion === PREVIOUS_COMPILER_VERSION;
+    const governanceCompiler =
+      job.compilerVersion === GOVERNANCE_COMPILER_VERSION &&
+      bundle.compilerVersion === GOVERNANCE_COMPILER_VERSION &&
+      artifact.artifactSchemaVersion === GOVERNANCE_COMPILED_ARTIFACT_SCHEMA_VERSION &&
+      artifact.world.compilerVersion === GOVERNANCE_COMPILER_VERSION;
     const currentCompiler =
       job.compilerVersion === COMPILER_VERSION &&
       bundle.compilerVersion === COMPILER_VERSION &&
       artifact.artifactSchemaVersion === COMPILED_ARTIFACT_SCHEMA_VERSION &&
       artifact.world.compilerVersion === COMPILER_VERSION;
-    if (!retainedCompiler && !previousCompiler && !currentCompiler) {
+    if (!retainedCompiler && !previousCompiler && !governanceCompiler && !currentCompiler) {
       throw new Error('COMPILATION_ARTIFACT_VERSION_MISMATCH');
     }
     let lockWaitMs = 0;

@@ -39,10 +39,10 @@ const uuid = '018f8652-3cb6-7d52-904b-cce7901d7e25';
 const hash = 'a'.repeat(64);
 
 describe('simulation contracts', () => {
-  it('publishes M10 aggregate, compiler, and process-registry compatibility', () => {
-    expect(CONTRACT_SCHEMA_VERSION).toBe(10);
-    expect(RUNTIME_SCHEMA_VERSION).toBe(10);
-    expect(COMPILER_VERSION).toBe('1.3.0');
+  it('publishes M11 aggregate, compiler, and process-registry compatibility', () => {
+    expect(CONTRACT_SCHEMA_VERSION).toBe(11);
+    expect(RUNTIME_SCHEMA_VERSION).toBe(11);
+    expect(COMPILER_VERSION).toBe('1.4.0');
     expect({
       batch: SIMULATION_BATCH_SCHEMA_VERSION,
       clock: SIMULATION_CLOCK_SCHEMA_VERSION,

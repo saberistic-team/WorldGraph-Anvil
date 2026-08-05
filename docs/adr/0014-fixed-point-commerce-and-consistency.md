@@ -1,6 +1,6 @@
 # ADR 0014: Fixed-point commerce and atomic treasury consistency
 
-Status: accepted for the implemented Milestone 09 architecture; Milestone 09 remains unsealed because acceptance verification is blocked.
+Status: accepted for the implemented Milestone 09 architecture; Milestone 09 is sealed.
 
 Date: 2026-07-22
 

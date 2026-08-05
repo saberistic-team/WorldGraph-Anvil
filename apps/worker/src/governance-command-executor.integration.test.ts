@@ -436,8 +436,8 @@ describe(`M10 governance command executor PostgreSQL lifecycle from ${databaseOr
     await expect(readRuntimeVersions(owner.pool)).resolves.toMatchObject({
       compiler: COMPILER_VERSION,
       compilerArtifactSchema: COMPILED_ARTIFACT_SCHEMA_VERSION,
-      contracts: 10,
-      runtimeSchema: 10,
+      contracts: 11,
+      runtimeSchema: 11,
     });
     if (databaseOrigin === 'upgrade') await expectPreservedPreM10Population(owner.pool);
     await importStarterPrimitives(owner.pool);

@@ -285,8 +285,8 @@ describe('M07 deterministic clock and scheduler migration', () => {
 
   it('upgrades compatibility and appends one truthful paused initialization fact', async () => {
     await expect(readRuntimeVersions(owner.pool)).resolves.toMatchObject({
-      contracts: 10,
-      runtimeSchema: 10,
+      contracts: 11,
+      runtimeSchema: 11,
       simulationBatchSchema: 1,
       simulationClockSchema: 1,
       simulationFailureSchema: 1,
@@ -2086,8 +2086,8 @@ describe('M07 deterministic clock and scheduler migration', () => {
     try {
       await migrate(fresh.db, { migrationsFolder: migrationRoot });
       await expect(readRuntimeVersions(fresh.pool)).resolves.toMatchObject({
-        contracts: 10,
-        runtimeSchema: 10,
+        contracts: 11,
+        runtimeSchema: 11,
         simulationClockSchema: 1,
         simulationScheduleSchema: 1,
       });

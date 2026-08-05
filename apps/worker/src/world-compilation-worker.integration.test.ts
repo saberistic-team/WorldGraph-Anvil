@@ -11,7 +11,7 @@ import {
   COMPILED_ARTIFACT_SCHEMA_VERSION,
   COMPILER_VERSION,
   canonicalJson,
-  type CompiledArtifactV4,
+  type CompiledArtifactV5,
   type CompilerDiagnosticV1,
   type CompilerInputBundleV1,
 } from '@worldgraph/contracts';
@@ -197,7 +197,7 @@ class CapturingActivationRepository extends PostgresWorldCompilationRepository {
   public override async activate(
     job: ClaimedWorldCompilation,
     bundle: CompilerInputBundleV1,
-    artifact: CompiledArtifactV4,
+    artifact: CompiledArtifactV5,
     diagnostics: readonly CompilerDiagnosticV1[],
     nextId: () => string,
   ): Promise<WorldActivationResult | null> {

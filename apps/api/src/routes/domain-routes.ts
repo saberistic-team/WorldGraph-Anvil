@@ -1,5 +1,6 @@
 import { Type } from '@sinclair/typebox';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
+import type { Pool } from 'pg';
 
 import type { RuntimeConfig } from '@worldgraph/config';
 import {
@@ -54,6 +55,7 @@ import { registerCommerceReadRoutes } from './commerce-read-routes.js';
 import { registerCommandRoutes } from './command-routes.js';
 import { registerCompilerRoutes } from './compiler-routes.js';
 import { registerEconomyRoutes } from './economy-routes.js';
+import { registerGeographyRoutes } from '../geography/routes.js';
 import { registerGovernanceRoutes } from './governance-routes.js';
 import { registerManifestRoutes } from './manifest-routes.js';
 import { registerPrimitiveRoutes } from './primitive-routes.js';
@@ -162,6 +164,7 @@ export interface DomainServices {
   governance?: GovernanceReadService;
   identity: IdentityService;
   manifests?: ManifestService;
+  pool?: Pool;
   primitives?: PrimitiveService;
   worlds: WorldService;
 }
@@ -619,6 +622,12 @@ export async function registerDomainRoutes(
   if (services.governance) {
     await registerGovernanceRoutes(app, services.governance, {
       authenticate: (request) => authenticate(request, services.identity),
+    });
+  }
+  if (services.pool) {
+    await registerGeographyRoutes(app, services.pool, {
+      authenticate: (request) => authenticate(request, services.identity),
+      mutation: (request) => authenticatedMutation(request, services.identity, config),
     });
   }
 }

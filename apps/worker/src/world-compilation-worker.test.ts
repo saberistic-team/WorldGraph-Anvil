@@ -394,7 +394,7 @@ describe('world compilation runner', () => {
 
     expect(repository.stages).toEqual(['compiling', 'seeding']);
     expect(repository.activation?.artifact.contentHash).toMatch(/^[a-f0-9]{64}$/u);
-    expect(repository.activation?.artifact.artifactSchemaVersion).toBe(4);
+    expect(repository.activation?.artifact.artifactSchemaVersion).toBe(5);
     expect(repository.activation?.artifact.world.compilerVersion).toBe(COMPILER_VERSION);
     expect(repository.activation?.bundle.inputHash).toBe(repository.jobValue.inputHash);
     expect(repository.activation?.members).toEqual([

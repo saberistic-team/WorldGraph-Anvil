@@ -41,6 +41,10 @@ import {
   createProductionCommerceRealtimeMetrics,
   RedisCommerceRealtimePublisher,
 } from './commerce-realtime.js';
+import {
+  createProductionGeographyRealtimeMetrics,
+  RedisGeographyRealtimePublisher,
+} from './geography-realtime.js';
 import { createHealthServer } from './health-server.js';
 import { createDisabledManifestGenerationProvider } from './manifest-generation-provider.js';
 import { PostgresManifestGenerationRepository } from './manifest-generation-repository.js';
@@ -229,7 +233,16 @@ const commerceRealtime = new RedisCommerceRealtimePublisher(
   logger,
   createProductionCommerceRealtimeMetrics(),
 );
-const outboxRepository = new PostgresOutboxRepository(database.pool, commerceRealtime);
+const geographyRealtime = new RedisGeographyRealtimePublisher(
+  healthRedis,
+  logger,
+  createProductionGeographyRealtimeMetrics(),
+);
+const outboxRepository = new PostgresOutboxRepository(
+  database.pool,
+  commerceRealtime,
+  geographyRealtime,
+);
 const outboxRunner = new OutboxRunner(
   outboxRepository,
   `worker:${process.pid}:${ids.next()}`,
@@ -477,6 +490,12 @@ export {
   createProductionCommerceRealtimeMetrics,
   RedisCommerceRealtimePublisher,
 } from './commerce-realtime.js';
+export {
+  createProductionGeographyRealtimeMetrics,
+  geographyNotificationFromInvalidationPayload,
+  geographyRealtimeChannelV1,
+  RedisGeographyRealtimePublisher,
+} from './geography-realtime.js';
 export {
   EconomyOfferCoordinator,
   EconomyOfferRunner,

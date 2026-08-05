@@ -14,6 +14,7 @@
     "0011_commerce_projection_repair.sql": "9b1923c5ccabe62abb1502f7a525f0052bd7c3e015b0ec41aa1bb7833fa7c3b6",
     "0012_commerce_reconciliation_integrity.sql": "f46f1c39b0e5e8365a7175c96fc72d72e7e0243d7d6e1a010aa31f1aa539aced",
     "0013_governance_laws_elections.sql": "de9e3476f807c18301d4bcab05210e849129b9fd6ee2f225de7a500fce88fd46",
-    "0014_governance_read_capabilities.sql": "c589912323b150085a1f2b4f9dcdba55b16921c56525c73278e3f312a9eaa99b"
+    "0014_governance_read_capabilities.sql": "c589912323b150085a1f2b4f9dcdba55b16921c56525c73278e3f312a9eaa99b",
+    "0015_geography_visual_scene.sql": "a18243a50606c50c9d8779ee16d744f3aff7acc1a1e88bd20d203f4503e6bb7b"
   }
 }

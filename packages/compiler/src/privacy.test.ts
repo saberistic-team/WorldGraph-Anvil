@@ -1,4 +1,4 @@
-import { canonicalJson, type CompiledArtifactV4 } from '@worldgraph/contracts';
+import { canonicalJson, type CompiledArtifactV5 } from '@worldgraph/contracts';
 import { describe, expect, it } from 'vitest';
 
 import { compilerInputHash, sha256Utf8, verifyCompiledArtifact } from './hash.js';
@@ -19,7 +19,7 @@ function refreshInputIdentity(input: ReturnType<typeof createGoldenCompilerInput
   input.inputHash = compilerInputHash(input);
 }
 
-function resign(artifact: CompiledArtifactV4): CompiledArtifactV4 {
+function resign(artifact: CompiledArtifactV5): CompiledArtifactV5 {
   artifact.canonicalBytes = canonicalJson(artifact.world);
   artifact.contentHash = sha256Utf8(artifact.canonicalBytes);
   return artifact;

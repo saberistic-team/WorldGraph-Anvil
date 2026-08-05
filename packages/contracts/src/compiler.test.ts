@@ -30,7 +30,7 @@ const uuid = '018f8652-3cb6-7d52-904b-cce7901d7e25';
 const hash = 'a'.repeat(64);
 
 describe('compiler and runtime contracts', () => {
-  it('advances M10 compiler/artifact heads while retaining graph/config axes', () => {
+  it('advances M11 compiler/artifact heads while retaining graph/config axes', () => {
     expect({
       artifact: COMPILED_ARTIFACT_SCHEMA_VERSION,
       compiler: COMPILER_VERSION,
@@ -40,17 +40,17 @@ describe('compiler and runtime contracts', () => {
       runtime: RUNTIME_SCHEMA_VERSION,
       worldGraph: WORLD_GRAPH_SCHEMA_VERSION,
     }).toEqual({
-      artifact: 4,
-      compiler: '1.3.0',
+      artifact: 5,
+      compiler: '1.4.0',
       config: 1,
-      contracts: 10,
+      contracts: 11,
       queue: 1,
-      runtime: 10,
+      runtime: 11,
       worldGraph: 1,
     });
   });
 
-  it('exposes all sealed M04-M10 axes through public system metadata', () => {
+  it('exposes all sealed M04-M11 axes through public system metadata', () => {
     expect(
       createValidator(SystemInfoSchema).is({
         build: { api: 'test' },
@@ -72,7 +72,7 @@ describe('compiler and runtime contracts', () => {
     ).toBe(true);
     const queue = {
       compilerConfigVersion: 1,
-      compilerVersion: '1.3.0',
+      compilerVersion: '1.4.0',
       inputHash: hash,
       manifestRevisionId: uuid,
       runId: uuid,
@@ -83,6 +83,7 @@ describe('compiler and runtime contracts', () => {
     expect(validator.is(queue)).toBe(true);
     expect(validator.is({ ...queue, compilerVersion: RETAINED_COMPILER_VERSION })).toBe(true);
     expect(validator.is({ ...queue, compilerVersion: PREVIOUS_COMPILER_VERSION })).toBe(true);
+    expect(validator.is({ ...queue, compilerVersion: '1.3.0' })).toBe(true);
     expect(validator.is({ ...queue, compilerVersion: '1.0.0' })).toBe(false);
     expect(validator.is({ ...queue, manifest: { private: 'authority injection' } })).toBe(false);
   });

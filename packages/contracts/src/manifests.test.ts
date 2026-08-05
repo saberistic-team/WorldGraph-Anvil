@@ -112,7 +112,7 @@ function manifestFixture(): Record<string, unknown> {
 }
 
 describe('manifest v1 contracts', () => {
-  it('preserves manifest v1 while M10 advances compiler and aggregate contracts', () => {
+  it('preserves manifest v1 while M11 advances compiler and aggregate contracts', () => {
     expect({
       api: API_VERSION,
       compiler: COMPILER_VERSION,
@@ -125,8 +125,8 @@ describe('manifest v1 contracts', () => {
       validator: MANIFEST_VALIDATOR_VERSION,
     }).toEqual({
       api: 'v1',
-      compiler: '1.3.0',
-      contracts: 10,
+      compiler: '1.4.0',
+      contracts: 11,
       generator: 1,
       manifest: 1,
       primitive: 1,

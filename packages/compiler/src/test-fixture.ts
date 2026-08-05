@@ -5,6 +5,7 @@ import {
 } from '@worldgraph/catalog';
 import type {
   CompilerInputBundleV1,
+  GovernanceCompilerInputBundleV1,
   LegacyCompilerInputBundleV1,
   PreviousCompilerInputBundleV1,
   RetainedCompilerInputBundleV1,
@@ -20,6 +21,7 @@ import {
 
 import {
   createCompilerInputBundle,
+  createGovernanceCompilerInputBundle,
   createLegacyCompilerInputBundle,
   createPreviousCompilerInputBundle,
   createRetainedCompilerInputBundle,
@@ -141,6 +143,43 @@ export function createPreviousGoldenCompilerInput(): PreviousCompilerInputBundle
     ],
     manifest: fallback.envelope.manifest,
     primitives: [...STARTER_PRIMITIVES, ...HARBOR_CITY_ECONOMY_PRIMITIVES]
+      .filter((primitive) => pinnedIds.has(primitive.versionId))
+      .map((primitive) => ({
+        contentHash: primitive.contentHash,
+        definition: primitive.input,
+        lifecycle: 'published' as const,
+        primitiveVersionId: primitive.versionId,
+      })),
+    seed: GOLDEN_COMPILER_SEED,
+  });
+}
+
+export function createGovernanceGoldenCompilerInput(): GovernanceCompilerInputBundleV1 {
+  const fallback = createDeterministicGovernedHarborCityFallback({
+    catalog: governedHarborCityManifestCatalog(),
+    prompt: HARBOR_CITY_MANIFEST_PROMPT,
+    seed: GOLDEN_COMPILER_SEED,
+  });
+  const pinnedIds = new Set(
+    fallback.envelope.manifest.primitiveRefs.map((entry) => entry.primitiveVersionId),
+  );
+  return createGovernanceCompilerInputBundle({
+    activeMembers: [
+      {
+        principalKey: memberPrincipalKey(GOLDEN_WORLD_ID, GOLDEN_CREATOR_USER_ID),
+        role: 'creator',
+      },
+      {
+        principalKey: memberPrincipalKey(GOLDEN_WORLD_ID, GOLDEN_PLAYER_USER_ID),
+        role: 'player',
+      },
+      {
+        principalKey: memberPrincipalKey(GOLDEN_WORLD_ID, GOLDEN_SECOND_PLAYER_USER_ID),
+        role: 'player',
+      },
+    ],
+    manifest: fallback.envelope.manifest,
+    primitives: [...STARTER_PRIMITIVES, ...HARBOR_CITY_ECONOMY_PRIMITIVES, ...GOVERNANCE_PRIMITIVES]
       .filter((primitive) => pinnedIds.has(primitive.versionId))
       .map((primitive) => ({
         contentHash: primitive.contentHash,

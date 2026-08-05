@@ -3400,3 +3400,78 @@ h2 {
     text-align: center;
   }
 }
+
+.explore-layout {
+  display: grid;
+  gap: 1.25rem;
+  grid-template-columns: minmax(14rem, 1fr) minmax(18rem, 1.4fr) minmax(14rem, 1fr);
+  margin-top: 1.5rem;
+}
+
+.explore-canvas {
+  aspect-ratio: 4 / 3;
+  background: #dfe6ee;
+  border: 1px solid color-mix(in srgb, CanvasText 18%, transparent);
+  min-height: 18rem;
+  width: 100%;
+}
+
+.object-list {
+  display: grid;
+  gap: 0.35rem;
+  list-style: none;
+  margin: 0;
+  max-height: 18rem;
+  overflow: auto;
+  padding: 0;
+}
+
+.object-list button {
+  background: transparent;
+  border: 1px solid color-mix(in srgb, CanvasText 14%, transparent);
+  color: inherit;
+  cursor: pointer;
+  display: block;
+  padding: 0.45rem 0.6rem;
+  text-align: left;
+  width: 100%;
+}
+
+.object-list button.selected,
+.schematic-map .selected {
+  border-color: #c45c26;
+  outline: 2px solid #c45c26;
+}
+
+.schematic-map {
+  background: #eef2f6;
+  border: 1px solid color-mix(in srgb, CanvasText 14%, transparent);
+  height: auto;
+  margin-top: 1rem;
+  max-width: 100%;
+  width: 100%;
+}
+
+.schematic-map polygon {
+  cursor: pointer;
+  fill: color-mix(in srgb, CanvasText 12%, transparent);
+  stroke: color-mix(in srgb, CanvasText 35%, transparent);
+}
+
+.schematic-map circle {
+  cursor: pointer;
+  fill: #2f6f4e;
+}
+
+.toolbar {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+@media (max-width: 56rem) {
+  .explore-layout {
+    grid-template-columns: 1fr;
+  }
+}

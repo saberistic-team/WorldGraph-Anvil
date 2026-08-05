@@ -5,12 +5,14 @@ import { join, resolve } from 'node:path';
 
 import { canonicalJson } from '../packages/contracts/src/index.js';
 import {
+  compileGovernanceArtifactForCompatibility,
   compileLegacyArtifactForCompatibility,
   compilePreviousArtifactForCompatibility,
   compileRetainedArtifactForCompatibility,
 } from '../packages/compiler/src/compatibility.js';
 import {
   createGoldenCompilerInput,
+  createGovernanceGoldenCompilerInput,
   createLegacyGoldenCompilerInput,
   createPreviousGoldenCompilerInput,
   createRetainedGoldenCompilerInput,
@@ -45,6 +47,7 @@ async function main(): Promise<void> {
     const legacyArtifactPath = join(directory, 'legacy-artifact.json');
     const retainedArtifactPath = join(directory, 'retained-artifact.json');
     const previousArtifactPath = join(directory, 'previous-artifact.json');
+    const governanceArtifactPath = join(directory, 'governance-artifact.json');
     const legacyArtifact = compileLegacyArtifactForCompatibility(
       createLegacyGoldenCompilerInput(),
     ).artifact;
@@ -57,6 +60,10 @@ async function main(): Promise<void> {
       createPreviousGoldenCompilerInput(),
     ).artifact;
     if (!previousArtifact) throw new Error('Frozen compiler 1.2 compatibility artifact failed.');
+    const governanceArtifact = compileGovernanceArtifactForCompatibility(
+      createGovernanceGoldenCompilerInput(),
+    ).artifact;
+    if (!governanceArtifact) throw new Error('Frozen compiler 1.3 compatibility artifact failed.');
 
     await Promise.all([
       writeFile(manifestPath, JSON.stringify(input.manifest), 'utf8'),
@@ -65,6 +72,7 @@ async function main(): Promise<void> {
       writeFile(legacyArtifactPath, canonicalJson(legacyArtifact), 'utf8'),
       writeFile(retainedArtifactPath, canonicalJson(retainedArtifact), 'utf8'),
       writeFile(previousArtifactPath, canonicalJson(previousArtifact), 'utf8'),
+      writeFile(governanceArtifactPath, canonicalJson(governanceArtifact), 'utf8'),
       symlink(cliPath, linkedCliPath),
     ]);
 
@@ -102,7 +110,13 @@ async function main(): Promise<void> {
     const previousVerification = JSON.parse(
       runCli(linkedCliPath, ['verify-artifact', '--artifact', previousArtifactPath]),
     ) as GoldenIdentity & { valid: boolean };
+    const governanceVerification = JSON.parse(
+      runCli(linkedCliPath, ['verify-artifact', '--artifact', governanceArtifactPath]),
+    ) as GoldenIdentity & { valid: boolean };
     const golden = JSON.parse(
+      await readFile('packages/compiler/src/fixtures/harbor-city.m11.golden.json', 'utf8'),
+    ) as GoldenIdentity;
+    const governanceGolden = JSON.parse(
       await readFile('packages/compiler/src/fixtures/harbor-city.m10.golden.json', 'utf8'),
     ) as GoldenIdentity;
     const previousGolden = JSON.parse(
@@ -136,6 +150,8 @@ async function main(): Promise<void> {
       second.artifactHash !== golden.artifactHash ||
       verification.valid !== true ||
       verification.artifactHash !== golden.artifactHash ||
+      governanceVerification.valid !== true ||
+      governanceVerification.artifactHash !== governanceGolden.artifactHash ||
       previousVerification.valid !== true ||
       previousVerification.artifactHash !== previousGolden.artifactHash ||
       retainedVerification.valid !== true ||
@@ -147,7 +163,7 @@ async function main(): Promise<void> {
     }
 
     console.log(
-      `Offline compiler CLI verified current ${golden.artifactHash}, previous ${previousGolden.artifactHash}, retained ${retainedGolden.artifactHash}, and legacy ${legacyGolden.artifactHash} across separate processes.`,
+      `Offline compiler CLI verified current ${golden.artifactHash}, governance ${governanceGolden.artifactHash}, previous ${previousGolden.artifactHash}, retained ${retainedGolden.artifactHash}, and legacy ${legacyGolden.artifactHash} across separate processes.`,
     );
   } finally {
     await rm(directory, { force: true, recursive: true });

@@ -29,8 +29,8 @@ const hash = 'a'.repeat(64);
 
 describe('ledger contracts', () => {
   it('advances runtime compatibility without coupling the six ledger axes', () => {
-    expect(CONTRACT_SCHEMA_VERSION).toBe(10);
-    expect(RUNTIME_SCHEMA_VERSION).toBe(10);
+    expect(CONTRACT_SCHEMA_VERSION).toBe(11);
+    expect(RUNTIME_SCHEMA_VERSION).toBe(11);
     expect({
       command: AUTHORITATIVE_COMMAND_SCHEMA_VERSION,
       event: DOMAIN_EVENT_SCHEMA_VERSION,

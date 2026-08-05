@@ -8,6 +8,9 @@ import {
   CompiledArtifactV2Schema,
   CompiledArtifactV3Schema,
   CompiledArtifactV4Schema,
+  CompiledArtifactV5Schema,
+  GOVERNANCE_COMPILED_ARTIFACT_SCHEMA_VERSION,
+  GOVERNANCE_COMPILER_VERSION,
   LEGACY_COMPILED_ARTIFACT_SCHEMA_VERSION,
   LEGACY_COMPILER_VERSION,
   PREVIOUS_COMPILED_ARTIFACT_SCHEMA_VERSION,
@@ -22,14 +25,17 @@ import {
   type CompiledArtifactV2,
   type CompiledArtifactV3,
   type CompiledArtifactV4,
+  type CompiledArtifactV5,
   type CompiledWorld,
   type CompilerDiagnosticV1,
   type CompilerInputBundleV1,
+  type GovernanceCompilerInputBundleV1,
   type LegacyCompilerInputBundleV1,
   type PreviousCompilerInputBundleV1,
   type RetainedCompilerInputBundleV1,
 } from '@worldgraph/contracts';
 import { assertEconomySeedPlanV2, economySeedPlanHash } from '@worldgraph/economy';
+import { assertGeographySeedPlanV1, geographySeedPlanHashV1 } from '@worldgraph/geography';
 import { assertGovernanceSeedPlanV1, governanceSeedPlanHashV1 } from '@worldgraph/governance';
 
 import { deriveEconomySeedPlanV1 } from './economy-seed.js';
@@ -53,7 +59,8 @@ export function compilerInputHash(
     | CompilerInputBundleV1
     | LegacyCompilerInputBundleV1
     | RetainedCompilerInputBundleV1
-    | PreviousCompilerInputBundleV1,
+    | PreviousCompilerInputBundleV1
+    | GovernanceCompilerInputBundleV1,
 ): string {
   return sha256Utf8(
     canonicalJson({
@@ -112,7 +119,8 @@ const verificationDiagnostic = (
 const legacyArtifactValidator = createValidator<CompiledArtifactV1>(CompiledArtifactV1Schema);
 const retainedArtifactValidator = createValidator<CompiledArtifactV2>(CompiledArtifactV2Schema);
 const previousArtifactValidator = createValidator<CompiledArtifactV3>(CompiledArtifactV3Schema);
-const currentArtifactValidator = createValidator<CompiledArtifactV4>(CompiledArtifactV4Schema);
+const governanceArtifactValidator = createValidator<CompiledArtifactV4>(CompiledArtifactV4Schema);
+const currentArtifactValidator = createValidator<CompiledArtifactV5>(CompiledArtifactV5Schema);
 
 function invalidPayloadDiagnostics(input: unknown): CompilerDiagnosticV1[] {
   if (input === null || typeof input !== 'object' || !('world' in input)) return [];
@@ -175,6 +183,7 @@ function selectedValidator(
   | typeof legacyArtifactValidator
   | typeof retainedArtifactValidator
   | typeof previousArtifactValidator
+  | typeof governanceArtifactValidator
   | typeof currentArtifactValidator
   | null {
   const artifact = input !== null && typeof input === 'object' ? input : null;
@@ -205,6 +214,13 @@ function selectedValidator(
     return previousArtifactValidator;
   }
   if (
+    artifactSchemaVersion === GOVERNANCE_COMPILED_ARTIFACT_SCHEMA_VERSION &&
+    worldArtifactSchemaVersion === GOVERNANCE_COMPILED_ARTIFACT_SCHEMA_VERSION &&
+    compilerVersion === GOVERNANCE_COMPILER_VERSION
+  ) {
+    return governanceArtifactValidator;
+  }
+  if (
     artifactSchemaVersion === COMPILED_ARTIFACT_SCHEMA_VERSION &&
     worldArtifactSchemaVersion === COMPILED_ARTIFACT_SCHEMA_VERSION &&
     compilerVersion === COMPILER_VERSION
@@ -223,7 +239,7 @@ export function verifyCompiledArtifact(input: unknown): ArtifactVerificationResu
         ...invalidPayloadDiagnostics(input),
         verificationDiagnostic(
           'ARTIFACT_VERSION_PAIR_UNSUPPORTED',
-          'Artifact must use the exact supported pair 1/1.0.0, 2/1.1.0, 3/1.2.0, or 4/1.3.0.',
+          'Artifact must use the exact supported pair 1/1.0.0, 2/1.1.0, 3/1.2.0, 4/1.3.0, or 5/1.4.0.',
           '/artifactSchemaVersion',
         ),
       ].slice(0, 128),
@@ -316,6 +332,7 @@ export function verifyCompiledArtifact(input: unknown): ArtifactVerificationResu
     }
   } else if (
     artifact.world.artifactSchemaVersion === PREVIOUS_COMPILED_ARTIFACT_SCHEMA_VERSION ||
+    artifact.world.artifactSchemaVersion === GOVERNANCE_COMPILED_ARTIFACT_SCHEMA_VERSION ||
     artifact.world.artifactSchemaVersion === COMPILED_ARTIFACT_SCHEMA_VERSION
   ) {
     const planHash = economySeedPlanHash(artifact.world.economySeedPlan);
@@ -339,7 +356,10 @@ export function verifyCompiledArtifact(input: unknown): ArtifactVerificationResu
         ),
       );
     }
-    if (artifact.world.artifactSchemaVersion === COMPILED_ARTIFACT_SCHEMA_VERSION) {
+    if (
+      artifact.world.artifactSchemaVersion === GOVERNANCE_COMPILED_ARTIFACT_SCHEMA_VERSION ||
+      artifact.world.artifactSchemaVersion === COMPILED_ARTIFACT_SCHEMA_VERSION
+    ) {
       const governancePlanHash = governanceSeedPlanHashV1(artifact.world.governanceSeedPlan);
       if (governancePlanHash !== artifact.world.governanceSeedPlanHash) {
         diagnostics.push(
@@ -358,6 +378,29 @@ export function verifyCompiledArtifact(input: unknown): ArtifactVerificationResu
             'GOVERNANCE_SEED_PLAN_INVALID',
             'Governance seed plan does not satisfy the V1 closure invariants.',
             '/world/governanceSeedPlan',
+          ),
+        );
+      }
+    }
+    if (artifact.world.artifactSchemaVersion === COMPILED_ARTIFACT_SCHEMA_VERSION) {
+      const geographyPlanHash = geographySeedPlanHashV1(artifact.world.geographySeedPlan);
+      if (geographyPlanHash !== artifact.world.geographySeedPlanHash) {
+        diagnostics.push(
+          verificationDiagnostic(
+            'GEOGRAPHY_SEED_PLAN_HASH_MISMATCH',
+            'Geography seed plan hash does not match the embedded semantic plan.',
+            '/world/geographySeedPlanHash',
+          ),
+        );
+      }
+      try {
+        assertGeographySeedPlanV1(artifact.world.geographySeedPlan);
+      } catch {
+        diagnostics.push(
+          verificationDiagnostic(
+            'GEOGRAPHY_SEED_PLAN_INVALID',
+            'Geography seed plan does not satisfy the V1 closure invariants.',
+            '/world/geographySeedPlan',
           ),
         );
       }

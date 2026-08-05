@@ -99,6 +99,13 @@
       "when": 1784635980000,
       "tag": "0014_governance_read_capabilities",
       "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1784636040000,
+      "tag": "0015_geography_visual_scene",
+      "breakpoints": true
     }
   ]
 }

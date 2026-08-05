@@ -23,6 +23,7 @@
     "@worldgraph/contracts": "workspace:*",
     "@worldgraph/db": "workspace:*",
     "@worldgraph/economy": "workspace:*",
+    "@worldgraph/geography": "workspace:*",
     "@worldgraph/governance": "workspace:*",
     "@worldgraph/governance-command": "workspace:*",
     "@worldgraph/ledger": "workspace:*",

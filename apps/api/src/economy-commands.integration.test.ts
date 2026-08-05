@@ -868,14 +868,14 @@ describe.sequential(
         await applyMigrations(client, canonicalMigrationRoot);
         await expect(importStarterPrimitives(client.pool)).resolves.toMatchObject({ imported: 4 });
         await expect(readRuntimeVersions(client.pool)).resolves.toMatchObject({
-          compiler: '1.3.0',
-          compilerArtifactSchema: 4,
-          contracts: 10,
+          compiler: '1.4.0',
+          compilerArtifactSchema: 5,
+          contracts: 11,
           economyExpansionReconciliationSchema: 2,
           economyExpansionSchema: 1,
           economyReconciliationSchema: 3,
           economySeedPlanSchema: 2,
-          runtimeSchema: 10,
+          runtimeSchema: 11,
           simulationProcessRegistry: 3,
         });
         await assertActiveM08World(client.pool, preservedWorld.worldId);
@@ -892,7 +892,7 @@ describe.sequential(
           client.pool.query<{ count: number }>(
             `select count(*)::integer as count from drizzle.__drizzle_migrations`,
           ),
-        ).resolves.toMatchObject({ rows: [{ count: 14 }] });
+        ).resolves.toMatchObject({ rows: [{ count: 15 }] });
         await expect(
           captureM08WorldSnapshot(client.pool, preservedWorld.worldId, beforeUpgrade.columns),
         ).resolves.toEqual(beforeUpgrade);

@@ -18,7 +18,7 @@ import {
   RETAINED_COMPILER_VERSION,
   type CompiledArtifactV2,
   type CompiledArtifactV3,
-  type CompiledArtifactV4,
+  type CompiledArtifactV5,
   type WorldManifestV1,
 } from '@worldgraph/contracts';
 import {
@@ -77,7 +77,7 @@ function inputOptions(manifest: WorldManifestV1) {
   };
 }
 
-function artifactV4(): CompiledArtifactV4 {
+function artifactV5(): CompiledArtifactV5 {
   const fallback = createDeterministicGovernedHarborCityFallback({
     catalog: governedHarborCityManifestCatalog(),
     prompt: 'A governed harbor city with civic proposals and elections.',
@@ -135,7 +135,7 @@ const identity = {
 
 describe('compiled seed plan activation persistence', () => {
   it('persists Artifact V4 economy and governance sources on the same activation client', async () => {
-    const artifact = artifactV4();
+    const artifact = artifactV5();
     const { client, queries } = recordingClient();
     const ids = [economyPlanId, governancePlanId];
 

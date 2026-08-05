@@ -186,20 +186,20 @@ describe('M10 governance, law, election, and treasury schema', () => {
     expect(crossWorldForeignKeys.rows).toEqual([]);
 
     await expect(readRuntimeVersions(owner.pool)).resolves.toMatchObject({
-      compiler: '1.3.0',
-      compilerArtifactSchema: 4,
-      contracts: 10,
+      compiler: '1.4.0',
+      compilerArtifactSchema: 5,
+      contracts: 11,
       governancePolicySchema: 1,
       governanceSchema: 1,
       governanceSeedPlanSchema: 1,
-      runtimeSchema: 10,
+      runtimeSchema: 11,
       simulationProcessRegistry: 3,
     });
 
     const migrationCount = await owner.pool.query<{ migration_count: number }>(
       `select count(*)::integer as migration_count from drizzle.__drizzle_migrations`,
     );
-    expect(migrationCount.rows).toEqual([{ migration_count: 14 }]);
+    expect(migrationCount.rows).toEqual([{ migration_count: 15 }]);
 
     const retainedRepairGuards = await owner.pool.query<{
       exact_effect_guard: string;
@@ -3524,7 +3524,7 @@ describe('M10 governance, law, election, and treasury schema', () => {
       expect(result.rows).toEqual([
         {
           membership_count: 1,
-          migration_count: 14,
+          migration_count: 15,
           procedure_name: 'worldgraph_governance_actor_capability_v1(uuid,uuid,text,uuid,uuid)',
         },
       ]);
@@ -3604,11 +3604,11 @@ describe('M10 governance, law, election, and treasury schema', () => {
            )::integer as governance_rows`,
         [worldId],
       );
-      expect(result.rows).toEqual([{ governance_rows: 0, migration_count: 14, world_count: 1 }]);
+      expect(result.rows).toEqual([{ governance_rows: 0, migration_count: 15, world_count: 1 }]);
       await expect(readRuntimeVersions(upgrade.pool)).resolves.toMatchObject({
-        contracts: 10,
+        contracts: 11,
         governanceSchema: 1,
-        runtimeSchema: 10,
+        runtimeSchema: 11,
       });
     } finally {
       await upgrade.pool.end();

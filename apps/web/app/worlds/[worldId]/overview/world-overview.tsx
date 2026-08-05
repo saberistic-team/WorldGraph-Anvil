@@ -106,6 +106,9 @@ export function WorldOverview({ worldId }: WorldOverviewProps) {
           <Link className="text-link" href={`/worlds/${worldId}/economy`}>
             Economy
           </Link>
+          <Link className="text-link" href={`/worlds/${worldId}/explore`}>
+            Explore
+          </Link>
           <Link className="text-link" href={`/worlds/${worldId}/govern`}>
             Govern
           </Link>

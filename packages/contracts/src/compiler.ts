@@ -2,6 +2,7 @@ import { Type, type Static } from '@sinclair/typebox';
 
 import { WorldRoleSchema } from './authority.js';
 import { EconomyHashSchema, EconomySeedPlanV1Schema, EconomySeedPlanV2Schema } from './economy.js';
+import { GeographyHashSchema, GeographySeedPlanV1Schema } from './geography.js';
 import { GovernanceHashSchema, GovernanceSeedPlanV1Schema } from './governance.js';
 import {
   PrimitiveDraftInputSchema,
@@ -19,6 +20,8 @@ import {
   COMPILED_ARTIFACT_SCHEMA_VERSION,
   COMPILER_CONFIG_SCHEMA_VERSION,
   COMPILER_VERSION,
+  GOVERNANCE_COMPILED_ARTIFACT_SCHEMA_VERSION,
+  GOVERNANCE_COMPILER_VERSION,
   LEGACY_COMPILED_ARTIFACT_SCHEMA_VERSION,
   LEGACY_COMPILER_VERSION,
   MANIFEST_SCHEMA_VERSION,
@@ -67,12 +70,14 @@ export const SupportedCompilerVersionSchema = Type.Union([
   Type.Literal(LEGACY_COMPILER_VERSION),
   Type.Literal(RETAINED_COMPILER_VERSION),
   Type.Literal(PREVIOUS_COMPILER_VERSION),
+  Type.Literal(GOVERNANCE_COMPILER_VERSION),
   Type.Literal(COMPILER_VERSION),
 ]);
 export const SupportedCompiledArtifactSchemaVersionSchema = Type.Union([
   Type.Literal(LEGACY_COMPILED_ARTIFACT_SCHEMA_VERSION),
   Type.Literal(RETAINED_COMPILED_ARTIFACT_SCHEMA_VERSION),
   Type.Literal(PREVIOUS_COMPILED_ARTIFACT_SCHEMA_VERSION),
+  Type.Literal(GOVERNANCE_COMPILED_ARTIFACT_SCHEMA_VERSION),
   Type.Literal(COMPILED_ARTIFACT_SCHEMA_VERSION),
 ]);
 
@@ -154,6 +159,13 @@ export const PreviousCompilerInputBundleV1Schema = Type.Object(
     compilerVersion: Type.Literal(PREVIOUS_COMPILER_VERSION),
   },
   { $id: 'PreviousCompilerInputBundleV1', additionalProperties: false },
+);
+export const GovernanceCompilerInputBundleV1Schema = Type.Object(
+  {
+    ...CompilerInputBundleV1Schema.properties,
+    compilerVersion: Type.Literal(GOVERNANCE_COMPILER_VERSION),
+  },
+  { $id: 'GovernanceCompilerInputBundleV1', additionalProperties: false },
 );
 export const RetainedCompilerInputBundleV1Schema = Type.Object(
   {
@@ -707,8 +719,8 @@ export const CompiledArtifactV3Schema = Type.Object(
 export const CompiledWorldV4Schema = Type.Object(
   {
     ...CompiledWorldV1Schema.properties,
-    artifactSchemaVersion: Type.Literal(COMPILED_ARTIFACT_SCHEMA_VERSION),
-    compilerVersion: Type.Literal(COMPILER_VERSION),
+    artifactSchemaVersion: Type.Literal(GOVERNANCE_COMPILED_ARTIFACT_SCHEMA_VERSION),
+    compilerVersion: Type.Literal(GOVERNANCE_COMPILER_VERSION),
     economySeedPlan: EconomySeedPlanV2Schema,
     economySeedPlanHash: EconomyHashSchema,
     governanceSeedPlan: GovernanceSeedPlanV1Schema,
@@ -720,7 +732,7 @@ export const CompiledWorldV4Schema = Type.Object(
 export const CompiledArtifactV4Schema = Type.Object(
   {
     artifactKind: Type.Literal('compiled_world'),
-    artifactSchemaVersion: Type.Literal(COMPILED_ARTIFACT_SCHEMA_VERSION),
+    artifactSchemaVersion: Type.Literal(GOVERNANCE_COMPILED_ARTIFACT_SCHEMA_VERSION),
     canonicalBytes: Type.String({ maxLength: 4_194_304, minLength: 2 }),
     contentHash: CompilerHashSchema,
     inputHash: CompilerHashSchema,
@@ -729,8 +741,41 @@ export const CompiledArtifactV4Schema = Type.Object(
   { $id: 'CompiledArtifactV4', additionalProperties: false },
 );
 
+export const CompiledWorldV5Schema = Type.Object(
+  {
+    ...CompiledWorldV1Schema.properties,
+    artifactSchemaVersion: Type.Literal(COMPILED_ARTIFACT_SCHEMA_VERSION),
+    compilerVersion: Type.Literal(COMPILER_VERSION),
+    economySeedPlan: EconomySeedPlanV2Schema,
+    economySeedPlanHash: EconomyHashSchema,
+    geographySeedPlan: GeographySeedPlanV1Schema,
+    geographySeedPlanHash: GeographyHashSchema,
+    governanceSeedPlan: GovernanceSeedPlanV1Schema,
+    governanceSeedPlanHash: GovernanceHashSchema,
+  },
+  { $id: 'CompiledWorldV5', additionalProperties: false },
+);
+
+export const CompiledArtifactV5Schema = Type.Object(
+  {
+    artifactKind: Type.Literal('compiled_world'),
+    artifactSchemaVersion: Type.Literal(COMPILED_ARTIFACT_SCHEMA_VERSION),
+    canonicalBytes: Type.String({ maxLength: 4_194_304, minLength: 2 }),
+    contentHash: CompilerHashSchema,
+    inputHash: CompilerHashSchema,
+    world: CompiledWorldV5Schema,
+  },
+  { $id: 'CompiledArtifactV5', additionalProperties: false },
+);
+
 export const CompiledWorldSchema = Type.Union(
-  [CompiledWorldV1Schema, CompiledWorldV2Schema, CompiledWorldV3Schema, CompiledWorldV4Schema],
+  [
+    CompiledWorldV1Schema,
+    CompiledWorldV2Schema,
+    CompiledWorldV3Schema,
+    CompiledWorldV4Schema,
+    CompiledWorldV5Schema,
+  ],
   { $id: 'CompiledWorld' },
 );
 export const CompiledArtifactSchema = Type.Union(
@@ -739,6 +784,7 @@ export const CompiledArtifactSchema = Type.Union(
     CompiledArtifactV2Schema,
     CompiledArtifactV3Schema,
     CompiledArtifactV4Schema,
+    CompiledArtifactV5Schema,
   ],
   { $id: 'CompiledArtifact' },
 );
@@ -981,6 +1027,7 @@ export const WorldCompilationRequestedQueueSchema = Type.Object(
     compilerVersion: Type.Union([
       Type.Literal(RETAINED_COMPILER_VERSION),
       Type.Literal(PREVIOUS_COMPILER_VERSION),
+      Type.Literal(GOVERNANCE_COMPILER_VERSION),
       Type.Literal(COMPILER_VERSION),
     ]),
     inputHash: CompilerHashSchema,
@@ -1000,6 +1047,7 @@ export type ActiveMemberPrincipalV1 = Static<typeof ActiveMemberPrincipalV1Schem
 export type CompilerInputBundleV1 = Static<typeof CompilerInputBundleV1Schema>;
 export type LegacyCompilerInputBundleV1 = Static<typeof LegacyCompilerInputBundleV1Schema>;
 export type PreviousCompilerInputBundleV1 = Static<typeof PreviousCompilerInputBundleV1Schema>;
+export type GovernanceCompilerInputBundleV1 = Static<typeof GovernanceCompilerInputBundleV1Schema>;
 export type RetainedCompilerInputBundleV1 = Static<typeof RetainedCompilerInputBundleV1Schema>;
 export type WorldEntityType = Static<typeof WorldEntityTypeSchema>;
 export type WorldRelationshipType = Static<typeof WorldRelationshipTypeSchema>;
@@ -1013,6 +1061,8 @@ export type CompiledWorldV3 = Static<typeof CompiledWorldV3Schema>;
 export type CompiledArtifactV3 = Static<typeof CompiledArtifactV3Schema>;
 export type CompiledWorldV4 = Static<typeof CompiledWorldV4Schema>;
 export type CompiledArtifactV4 = Static<typeof CompiledArtifactV4Schema>;
+export type CompiledWorldV5 = Static<typeof CompiledWorldV5Schema>;
+export type CompiledArtifactV5 = Static<typeof CompiledArtifactV5Schema>;
 export type CompiledWorld = Static<typeof CompiledWorldSchema>;
 export type CompiledArtifact = Static<typeof CompiledArtifactSchema>;
 export type WorldCompilationStatus = Static<typeof WorldCompilationStatusSchema>;

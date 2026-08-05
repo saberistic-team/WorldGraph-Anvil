@@ -68,29 +68,30 @@ Certification appends immutable results. Election certification ends prior seat 
 
 ## Compatibility state
 
-| Axis                                                   | Current value                                |
-| ------------------------------------------------------ | -------------------------------------------- |
-| Public API                                             | `v1`                                         |
-| Contract/runtime schema                                | `10` / `10`                                  |
-| Manifest/generator/prompt/validator/wake               | `1`                                          |
-| Manifest `worldgraph.economy` extension                | `2`                                          |
-| Primitive schema/index policy                          | `1`                                          |
-| Command/event/ledger/projection/outbox/history         | `1`                                          |
-| Application, commerce, governance notification schemas | `1`                                          |
-| Compiler                                               | `1.3.0` (`1.2.0`, `1.1.0`, `1.0.0` retained) |
-| Compiler config/graph/wake                             | `1`                                          |
-| Compiler artifact                                      | `4` (`3`, `2`, `1` retained)                 |
-| Simulation clock/schedule/action/process               | `1`                                          |
-| Simulation batch/failure/queue/projection/outcome/PRNG | `1`                                          |
-| Simulation process registry                            | `3` (`2`, `1` retained)                      |
-| Simulation PRNG algorithm                              | `xorshift32-sha256-v1`                       |
-| Economy seed plan                                      | `2` (`1` retained)                           |
-| Economy/currency/wallet/financial transaction          | `1`                                          |
-| Asset/ownership/offer                                  | `1`                                          |
-| Economy reconciliation                                 | `2` (`1` retained)                           |
-| Resource/recipe/inventory                              | `1`                                          |
-| Business/facility/employment/production                | `1`                                          |
-| Market/trade/tax/commerce expansion                    | `1`                                          |
-| Governance seed/schema/policy/tally                    | `1`                                          |
+| Axis                                                   | Current value                                         |
+| ------------------------------------------------------ | ----------------------------------------------------- |
+| Public API                                             | `v1`                                                  |
+| Contract/runtime schema                                | `11` / `11`                                           |
+| Manifest/generator/prompt/validator/wake               | `1`                                                   |
+| Manifest `worldgraph.economy` extension                | `2`                                                   |
+| Primitive schema/index policy                          | `1`                                                   |
+| Command/event/ledger/projection/outbox/history         | `1`                                                   |
+| Application, commerce, governance notification schemas | `1`                                                   |
+| Compiler                                               | `1.4.0` (`1.3.0`, `1.2.0`, `1.1.0`, `1.0.0` retained) |
+| Compiler config/graph/wake                             | `1`                                                   |
+| Compiler artifact                                      | `5` (`4`, `3`, `2`, `1` retained)                     |
+| Geography seed / visual scene plan / style kit         | `1` / `1` / `1`                                       |
+| Simulation clock/schedule/action/process               | `1`                                                   |
+| Simulation batch/failure/queue/projection/outcome/PRNG | `1`                                                   |
+| Simulation process registry                            | `3` (`2`, `1` retained)                               |
+| Simulation PRNG algorithm                              | `xorshift32-sha256-v1`                                |
+| Economy seed plan                                      | `2` (`1` retained)                                    |
+| Economy/currency/wallet/financial transaction          | `1`                                                   |
+| Asset/ownership/offer                                  | `1`                                                   |
+| Economy reconciliation                                 | `3` (`2`, `1` retained)                               |
+| Resource/recipe/inventory                              | `1`                                                   |
+| Business/facility/employment/production                | `1`                                                   |
+| Market/trade/tax/commerce expansion                    | `1`                                                   |
+| Governance seed/schema/policy/tally                    | `1`                                                   |
 
-Graph access remains relational in PostgreSQL. A graph database, microservices, live model provider, Manifest v2, real-money path, or a new runtime mutation domain requires measured evidence and a separately reviewed version/ADR. See ADRs 0007–0015.
+Graph access remains relational in PostgreSQL. Geography is PostGIS-authoritative; visual scene plans and WebGL are replaceable projection. A graph database, microservices, live model provider, Manifest v2, real-money path, or a new runtime mutation domain requires measured evidence and a separately reviewed version/ADR. See ADRs 0007–0016.

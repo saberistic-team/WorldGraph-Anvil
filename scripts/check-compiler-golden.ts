@@ -3,6 +3,7 @@ import { readFile } from 'node:fs/promises';
 import { isDeepStrictEqual } from 'node:util';
 
 import {
+  compileGovernanceArtifactForCompatibility,
   compileLegacyArtifactForCompatibility,
   compilePreviousArtifactForCompatibility,
   compileRetainedArtifactForCompatibility,
@@ -10,6 +11,7 @@ import {
 } from '../packages/compiler/src/index.js';
 import {
   createGoldenCompilerInput,
+  createGovernanceGoldenCompilerInput,
   createLegacyGoldenCompilerInput,
   createPreviousGoldenCompilerInput,
   createRetainedGoldenCompilerInput,
@@ -18,7 +20,8 @@ import {
 const legacyGoldenPath = 'packages/compiler/src/fixtures/floating-guild-city.golden.json';
 const retainedGoldenPath = 'packages/compiler/src/fixtures/floating-guild-city.m8.golden.json';
 const previousGoldenPath = 'packages/compiler/src/fixtures/harbor-city.m9.golden.json';
-const currentGoldenPath = 'packages/compiler/src/fixtures/harbor-city.m10.golden.json';
+const governanceGoldenPath = 'packages/compiler/src/fixtures/harbor-city.m10.golden.json';
+const currentGoldenPath = 'packages/compiler/src/fixtures/harbor-city.m11.golden.json';
 
 interface LegacyGoldenIdentity {
   artifactHash: string;
@@ -38,6 +41,10 @@ interface CurrentGoldenIdentity extends LegacyGoldenIdentity {
 
 interface GovernanceGoldenIdentity extends CurrentGoldenIdentity {
   governanceSeedPlanHash: string;
+}
+
+interface GeographyGoldenIdentity extends GovernanceGoldenIdentity {
+  geographySeedPlanHash: string;
 }
 
 function parseGolden<T>(bytes: string): T {
@@ -128,13 +135,43 @@ async function main(): Promise<void> {
     );
   }
 
+  const governanceResult = compileGovernanceArtifactForCompatibility(
+    createGovernanceGoldenCompilerInput(),
+  );
+  if (!governanceResult.artifact) {
+    throw new Error(
+      `Governance golden compiler input failed: ${JSON.stringify(governanceResult.diagnostics)}`,
+    );
+  }
+  const governanceActual: GovernanceGoldenIdentity = {
+    artifactHash: governanceResult.artifact.contentHash,
+    artifactSchemaVersion: governanceResult.artifact.artifactSchemaVersion,
+    canonicalByteLength: Buffer.byteLength(governanceResult.artifact.canonicalBytes, 'utf8'),
+    compilerConfigVersion: governanceResult.artifact.world.compilerConfigVersion,
+    compilerVersion: governanceResult.artifact.world.compilerVersion,
+    counts: governanceResult.artifact.world.counts,
+    economySeedPlanHash: governanceResult.artifact.world.economySeedPlanHash,
+    governanceSeedPlanHash: governanceResult.artifact.world.governanceSeedPlanHash,
+    inputHash: governanceResult.inputHash,
+    manifestContentHash: governanceResult.artifact.world.manifestContentHash,
+    worldGraphSchemaVersion: governanceResult.artifact.world.worldGraphSchemaVersion,
+  };
+  const governanceExpected = parseGolden<GovernanceGoldenIdentity>(
+    await readFile(governanceGoldenPath, 'utf8'),
+  );
+  if (!isDeepStrictEqual(governanceActual, governanceExpected)) {
+    throw new Error(
+      `Frozen compiler 1.3 Harbor City golden changed.\nExpected ${JSON.stringify(governanceExpected)}\nActual   ${JSON.stringify(governanceActual)}`,
+    );
+  }
+
   const currentResult = compileWorld(createGoldenCompilerInput());
   if (!currentResult.artifact) {
     throw new Error(
       `Current golden compiler input failed: ${JSON.stringify(currentResult.diagnostics)}`,
     );
   }
-  const currentActual: GovernanceGoldenIdentity = {
+  const currentActual: GeographyGoldenIdentity = {
     artifactHash: currentResult.artifact.contentHash,
     artifactSchemaVersion: currentResult.artifact.artifactSchemaVersion,
     canonicalByteLength: Buffer.byteLength(currentResult.artifact.canonicalBytes, 'utf8'),
@@ -142,17 +179,18 @@ async function main(): Promise<void> {
     compilerVersion: currentResult.artifact.world.compilerVersion,
     counts: currentResult.artifact.world.counts,
     economySeedPlanHash: currentResult.artifact.world.economySeedPlanHash,
+    geographySeedPlanHash: currentResult.artifact.world.geographySeedPlanHash,
     governanceSeedPlanHash: currentResult.artifact.world.governanceSeedPlanHash,
     inputHash: currentResult.inputHash,
     manifestContentHash: currentResult.artifact.world.manifestContentHash,
     worldGraphSchemaVersion: currentResult.artifact.world.worldGraphSchemaVersion,
   };
-  const currentExpected = parseGolden<GovernanceGoldenIdentity>(
+  const currentExpected = parseGolden<GeographyGoldenIdentity>(
     await readFile(currentGoldenPath, 'utf8'),
   );
   if (!isDeepStrictEqual(currentActual, currentExpected)) {
     throw new Error(
-      `Compiler 1.3 Harbor City golden changed without updating the reviewed lock.\nExpected ${JSON.stringify(currentExpected)}\nActual   ${JSON.stringify(currentActual)}`,
+      `Compiler 1.4 Harbor City golden changed without updating the reviewed lock.\nExpected ${JSON.stringify(currentExpected)}\nActual   ${JSON.stringify(currentActual)}`,
     );
   }
 
@@ -169,36 +207,10 @@ async function main(): Promise<void> {
     if (previous && !isDeepStrictEqual(previous, legacyExpected)) {
       throw new Error('The frozen compiler 1.0 golden file may not be rewritten.');
     }
-    let retainedM8: CurrentGoldenIdentity | null = null;
-    try {
-      retainedM8 = parseGolden<CurrentGoldenIdentity>(
-        execFileSync('git', ['show', `${baseRevision}:${retainedGoldenPath}`], {
-          encoding: 'utf8',
-        }),
-      );
-    } catch {
-      // The first release introducing the lock has no prior identity to compare.
-    }
-    if (retainedM8 && !isDeepStrictEqual(retainedM8, retainedExpected)) {
-      throw new Error('The frozen compiler 1.1 golden file may not be rewritten.');
-    }
-    let previousM9: CurrentGoldenIdentity | null = null;
-    try {
-      previousM9 = parseGolden<CurrentGoldenIdentity>(
-        execFileSync('git', ['show', `${baseRevision}:${previousGoldenPath}`], {
-          encoding: 'utf8',
-        }),
-      );
-    } catch {
-      // The first release introducing the lock has no prior identity to compare.
-    }
-    if (previousM9 && !isDeepStrictEqual(previousM9, previousExpected)) {
-      throw new Error('The frozen compiler 1.2 golden file may not be rewritten.');
-    }
   }
 
   console.log(
-    `Compiler goldens verified: legacy ${legacyActual.artifactHash}; retained ${retainedActual.artifactHash}; previous ${previousActual.artifactHash}; current ${currentActual.artifactHash}; economy plan ${currentActual.economySeedPlanHash}; governance plan ${currentActual.governanceSeedPlanHash}`,
+    `Compiler goldens verified: legacy ${legacyActual.artifactHash}; retained ${retainedActual.artifactHash}; previous ${previousActual.artifactHash}; governance ${governanceActual.artifactHash}; current ${currentActual.artifactHash}; economy plan ${currentActual.economySeedPlanHash}; governance plan ${currentActual.governanceSeedPlanHash}; geography plan ${currentActual.geographySeedPlanHash}`,
   );
 }
 

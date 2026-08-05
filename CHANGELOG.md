@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased — Milestone 11 (sealed August 5, 2026 EDT)
+
+- Advanced native compilation to compiler `1.4.0`, artifact schema `5`, and `GeographySeedPlanV1` while retaining exact `1.3.0`/artifact-4/governance-plan-1, `1.2.0`/artifact-3/economy-plan-2, `1.1.0`/artifact-2/plan-1, and `1.0.0`/artifact-1 verification. The current Harbor golden pins manifest `3f6aa7ff355d2d9e4281bbdc52409809bf9f848274e8949fb5fd7fb314553dfd`, input `df7f0ee9423b8e4665e88c0653ff45ff2d0ac6f352d71424a4e9b88ca97264a9`, artifact `881444dac7977b6fc7aafec03f90b6d3ffd135d3dd10b7b8f36adff16e1720f1`, economy plan `69ac34721c356be82eb6693620f6cdadb7ec973d128e732ed99a9ee55cf3ef8b`, governance plan `f468a3eb92a853e30a5d708e4e31128c6830f791477e2d82f20efdab9ed3d93a`, and geography plan `ed2b5d4d31826a32d153c5957090f1fa901ec53ccfcce9f9e9af9e64d4f612f3` (43,037 canonical bytes; 43 entities; 50 relationships; 3 controllers).
+- Added PostGIS-authoritative geography, immutable visual scene plans, placeholder asset catalog, creator initialize/publish routes, bounded member reads, outbox geography invalidations, Explore R3F with accessible 2D fallback, and ADR 0016.
+- Added frozen migration journal head `0015` `a18243a50606c50c9d8779ee16d744f3aff7acc1a1e88bd20d203f4503e6bb7b`. Exact populated `0014` upgrades add empty geography structures only and never invent spatial rows.
+- Sealed M11 after `pnpm check` passed 139 unit files/989 tests and production builds plus journal/golden/CLI gates; the dedicated M11 upgrade-origin gate passed 1 file/3 tests; Playwright passed 94/94 including Explore. Full aggregate integration was repaired for M11 head expectations and compiler allowlists; Compose clean/retained browser recovery was not re-run in this seal window and remains a residual.
+- Retained: trusted-server ballot privacy; P2 inert operator-replay evidence; mutable base/CI tags; no-client-authority for WebGL; geography creator HTTP without full command-bus envelope parity.
+
 ## Unreleased — Milestone 10 (sealed August 5, 2026 EDT)
 
 - Advanced native compilation to compiler `1.3.0`, artifact schema `4`, and `GovernanceSeedPlanV1` while retaining exact `1.2.0`/artifact-3/economy-plan-2, `1.1.0`/artifact-2/plan-1, and `1.0.0`/artifact-1 verification. The current Harbor golden pins manifest `3f6aa7ff355d2d9e4281bbdc52409809bf9f848274e8949fb5fd7fb314553dfd`, input `9816d6bbedd0880e58e4d893dd78af7955b9a442d5986437ede8a2ec264e62f3`, artifact `f900d58b08dd07b4a04dc3d35295c9d72243f2124d012a7b890c1e57734429dd`, economy plan `69ac34721c356be82eb6693620f6cdadb7ec973d128e732ed99a9ee55cf3ef8b`, and governance plan `f468a3eb92a853e30a5d708e4e31128c6830f791477e2d82f20efdab9ed3d93a` (39,935 canonical bytes; 43 entities; 50 relationships; 3 controllers).

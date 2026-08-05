@@ -11,6 +11,10 @@ import {
   commerceNotificationsForEvent,
   type CommerceRealtimePublisher,
 } from './commerce-realtime.js';
+import {
+  geographyNotificationFromInvalidationPayload,
+  type GeographyRealtimePublisher,
+} from './geography-realtime.js';
 
 export const WORLD_HISTORY_CONSUMER = 'world_history_v1';
 
@@ -75,6 +79,7 @@ export class PostgresOutboxRepository implements OutboxRepository {
   public constructor(
     private readonly pool: Pool,
     private readonly commerceRealtime?: CommerceRealtimePublisher,
+    private readonly geographyRealtime?: GeographyRealtimePublisher,
   ) {}
 
   public async claim(
@@ -165,6 +170,30 @@ export class PostgresOutboxRepository implements OutboxRepository {
         await client.query('rollback');
         return false;
       }
+      if (row.message_type === 'GeographyInvalidationV1') {
+        if (!this.geographyRealtime) {
+          throw new Error('OUTBOX_GEOGRAPHY_REALTIME_UNAVAILABLE');
+        }
+        const notification = geographyNotificationFromInvalidationPayload(message.payload);
+        if (!notification || notification.worldId !== message.worldId) {
+          throw new Error('OUTBOX_GEOGRAPHY_INVALIDATION_INVALID');
+        }
+        await this.geographyRealtime.publish(notification);
+        const publishedGeography = await client.query(
+          `update outbox_messages
+              set status = 'published', published_at = clock_timestamp(),
+                  locked_at = null, locked_by = null
+            where id = $1 and status = 'pending' and locked_by = $2 and attempts = $3`,
+          [message.id, workerId, message.attempts],
+        );
+        if ((publishedGeography.rowCount ?? 0) !== 1) {
+          await client.query('rollback');
+          return false;
+        }
+        await client.query('commit');
+        return true;
+      }
+
       if (row.message_type !== 'DomainEventReferenceV1' || !row.event_id) {
         throw new Error('OUTBOX_MESSAGE_TYPE_UNREGISTERED');
       }

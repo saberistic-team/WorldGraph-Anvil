@@ -1030,19 +1030,22 @@ describe('platform and identity-authority migrations', () => {
       'vector',
     ]);
     await expect(readRuntimeVersions(client.pool)).resolves.toMatchObject({
-      compiler: '1.3.0',
-      compilerArtifactSchema: 4,
+      compiler: '1.4.0',
+      compilerArtifactSchema: 5,
       compilerConfigSchema: 1,
       compilationQueueSchema: 1,
       commerceProjectionRepairSchema: 1,
-      contracts: 10,
+      contracts: 11,
       economyExpansionReconciliationSchema: 2,
       economyExpansionSchema: 1,
       economySeedPlanSchema: 2,
+      geographySchema: 1,
+      geographySeedPlanSchema: 1,
       manifestSchema: 1,
       primitiveSchema: 1,
-      runtimeSchema: 10,
+      runtimeSchema: 11,
       simulationProcessRegistry: 3,
+      visualScenePlanSchema: 1,
       worldGraphSchema: 1,
     });
   });
@@ -1622,10 +1625,10 @@ describe('platform and identity-authority migrations', () => {
 
       await migrate(upgradeClient.db, { migrationsFolder: migrationRoot });
       await expect(readRuntimeVersions(upgradeClient.pool)).resolves.toMatchObject({
-        contracts: 10,
+        contracts: 11,
         manifestSchema: 1,
         primitiveSchema: 1,
-        runtimeSchema: 10,
+        runtimeSchema: 11,
       });
       const tables = await upgradeClient.pool.query<{ table_name: string }>(
         `select table_name
@@ -1734,10 +1737,10 @@ describe('platform and identity-authority migrations', () => {
 
       await migrate(upgradeClient.db, { migrationsFolder: migrationRoot });
       await expect(readRuntimeVersions(upgradeClient.pool)).resolves.toMatchObject({
-        contracts: 10,
+        contracts: 11,
         manifestSchema: 1,
         primitiveSchema: 1,
-        runtimeSchema: 10,
+        runtimeSchema: 11,
       });
       await expect(
         upgradeClient.pool.query(
@@ -2274,7 +2277,7 @@ describe('platform and identity-authority migrations', () => {
       expect(after.rows).toEqual([
         {
           checkpoint_columns: 3,
-          migration_count: 14,
+          migration_count: 15,
           payload_fact_table: 'commerce_command_payload_facts',
           rate_scope_columns: 1,
           selection_count: 1,
@@ -2555,7 +2558,7 @@ describe('platform and identity-authority migrations', () => {
         `select count(*)::integer as migration_count
            from drizzle.__drizzle_migrations`,
       );
-      expect(repeated.rows).toEqual([{ migration_count: 14 }]);
+      expect(repeated.rows).toEqual([{ migration_count: 15 }]);
     } finally {
       await upgradeClient.pool.end();
       await rm(temporaryRoot, { force: true, recursive: true });

@@ -6,6 +6,7 @@ export * from './authority.js';
 export * from './commands.js';
 export * from './economy.js';
 export * from './errors.js';
+export * from './geography.js';
 export * from './governance.js';
 export * from './identity.js';
 export * from './ledger.js';

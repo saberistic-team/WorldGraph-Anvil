@@ -6,7 +6,8 @@ import { describe, expect, it } from 'vitest';
 import legacyGolden from './fixtures/floating-guild-city.golden.json';
 import retainedGolden from './fixtures/floating-guild-city.m8.golden.json';
 import previousGolden from './fixtures/harbor-city.m9.golden.json';
-import currentGolden from './fixtures/harbor-city.m10.golden.json';
+import governanceGolden from './fixtures/harbor-city.m10.golden.json';
+import currentGolden from './fixtures/harbor-city.m11.golden.json';
 
 const repositoryRoot = fileURLToPath(new URL('../../../', import.meta.url));
 
@@ -14,6 +15,18 @@ const currentProgram = `
   import { compileWorld } from './packages/compiler/src/pipeline.ts';
   import { createGoldenCompilerInput } from './packages/compiler/src/test-fixture.ts';
   const result = compileWorld(createGoldenCompilerInput());
+  if (!result.artifact) throw new Error(JSON.stringify(result.diagnostics));
+  process.stdout.write(JSON.stringify({
+    artifactHash: result.artifact.contentHash,
+    canonicalBytes: result.artifact.canonicalBytes,
+    inputHash: result.inputHash,
+  }));
+`;
+
+const governanceProgram = `
+  import { compileGovernanceArtifactForCompatibility } from './packages/compiler/src/compatibility.ts';
+  import { createGovernanceGoldenCompilerInput } from './packages/compiler/src/test-fixture.ts';
+  const result = compileGovernanceArtifactForCompatibility(createGovernanceGoldenCompilerInput());
   if (!result.artifact) throw new Error(JSON.stringify(result.diagnostics));
   process.stdout.write(JSON.stringify({
     artifactHash: result.artifact.contentHash,
@@ -97,7 +110,11 @@ describe('compiler process reproducibility', () => {
     assertReproducible(previousProgram, previousGolden);
   }, 70_000);
 
-  it('emits compiler 1.3/artifact 4 bytes across isolated timezone and locale settings', () => {
+  it('preserves compiler 1.3/artifact 4 bytes across isolated timezone and locale settings', () => {
+    assertReproducible(governanceProgram, governanceGolden);
+  }, 70_000);
+
+  it('emits compiler 1.4/artifact 5 bytes across isolated timezone and locale settings', () => {
     assertReproducible(currentProgram, currentGolden);
   }, 70_000);
 });

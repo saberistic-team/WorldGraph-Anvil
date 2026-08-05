@@ -250,9 +250,9 @@ describe(`M10 governed economy enactment PostgreSQL integration from ${databaseO
     }
     await applyMigrations(owner, migrationRoot);
     await expect(readRuntimeVersions(owner.pool)).resolves.toMatchObject({
-      contracts: 10,
+      contracts: 11,
       governanceSchema: 1,
-      runtimeSchema: 10,
+      runtimeSchema: 11,
     });
     await importStarterPrimitives(owner.pool);
     await seedApprovedCompilation(owner.pool);

@@ -1,0 +1,18 @@
+{
+  "artifactHash": "881444dac7977b6fc7aafec03f90b6d3ffd135d3dd10b7b8f36adff16e1720f1",
+  "artifactSchemaVersion": 5,
+  "canonicalByteLength": 43037,
+  "compilerConfigVersion": 1,
+  "compilerVersion": "1.4.0",
+  "counts": {
+    "controllers": 3,
+    "entities": 43,
+    "relationships": 50
+  },
+  "economySeedPlanHash": "69ac34721c356be82eb6693620f6cdadb7ec973d128e732ed99a9ee55cf3ef8b",
+  "geographySeedPlanHash": "ed2b5d4d31826a32d153c5957090f1fa901ec53ccfcce9f9e9af9e64d4f612f3",
+  "governanceSeedPlanHash": "f468a3eb92a853e30a5d708e4e31128c6830f791477e2d82f20efdab9ed3d93a",
+  "inputHash": "df7f0ee9423b8e4665e88c0653ff45ff2d0ac6f352d71424a4e9b88ca97264a9",
+  "manifestContentHash": "3f6aa7ff355d2d9e4281bbdc52409809bf9f848274e8949fb5fd7fb314553dfd",
+  "worldGraphSchemaVersion": 1
+}

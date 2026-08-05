@@ -30,6 +30,7 @@ export function WorldEconomyNav({
       <Link href={`/worlds/${worldId}/graph`}>Graph</Link>
       <Link href={`/worlds/${worldId}/simulate`}>Simulate</Link>
       <Link href={`/worlds/${worldId}/history`}>History</Link>
+      <Link href={`/worlds/${worldId}/explore`}>Explore</Link>
       <Link href={`/worlds/${worldId}/govern`}>Govern</Link>
       <Link
         aria-current={current === 'economy' ? 'page' : undefined}

@@ -246,6 +246,7 @@ const app = await buildApp({
     governance,
     identity,
     manifests,
+    pool: database.pool,
     primitives,
     worlds,
   },

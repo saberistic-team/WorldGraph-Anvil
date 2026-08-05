@@ -16,7 +16,7 @@ Canonical records:
 - [Milestone 08 — Wallets, transfers, and ownership](./08-wallets-transfers-ownership-state.md) ([compatibility pointer](./M08-handoff.md)) — complete and sealed
 - [Milestone 09 — Production, businesses, jobs, markets, treasury, and tax](./09-production-businesses-jobs-markets-tax-state.md) ([compatibility handoff](./M09-handoff.md)) — complete and sealed
 - [Milestone 10 — Governance, laws, proposals, voting, and elections](./10-governance-laws-proposals-voting-elections-state.md) ([compatibility handoff](./M10-handoff.md)) — complete and sealed
-- Milestone 11 — **authorized** with the complete M10 state and handoff as cumulative inputs.
-- Milestones 12–16 — sequentially locked until each immediately preceding milestone is explicitly sealed.
+- [Milestone 11 — Geography, Visual Plan, and Basic WebGL World](./11-geography-visual-plan-webgl-state.md) ([compatibility handoff](./M11-handoff.md)) — complete and sealed
+- Milestones 12–16 — sequentially locked until each immediately preceding milestone is explicitly sealed. Milestone 12 is authorized by the sealed M11 handoff.
 
 Do not begin a later milestone while the immediately preceding canonical record is marked incomplete or awaiting acceptance evidence.

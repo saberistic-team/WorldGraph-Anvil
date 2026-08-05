@@ -661,13 +661,13 @@ describe('deterministic compiler WorldGraph persistence', () => {
       });
       await migrate(upgrade.db, { migrationsFolder: migrationRoot });
       await expect(readRuntimeVersions(upgrade.pool)).resolves.toMatchObject({
-        compiler: '1.3.0',
-        compilerArtifactSchema: 4,
+        compiler: '1.4.0',
+        compilerArtifactSchema: 5,
         compilerConfigSchema: 1,
         compilationQueueSchema: 1,
-        contracts: 10,
+        contracts: 11,
         economySeedPlanSchema: 2,
-        runtimeSchema: 10,
+        runtimeSchema: 11,
         simulationProcessRegistry: 3,
         worldGraphSchema: 1,
       });

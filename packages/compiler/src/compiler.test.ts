@@ -5,7 +5,7 @@ import {
   WorldEntityStatePairV1Validator,
   WorldRelationshipAttributesPairV1Validator,
   canonicalJson,
-  type CompiledArtifactV4,
+  type CompiledArtifactV5,
   type CompilerInputBundleV1,
 } from '@worldgraph/contracts';
 import { economySeedPlanHash } from '@worldgraph/economy';
@@ -13,6 +13,7 @@ import { governanceSeedPlanHashV1 } from '@worldgraph/governance';
 
 import { compilerAdapterFor } from './adapters.js';
 import {
+  compileGovernanceArtifactForCompatibility,
   compileLegacyArtifactForCompatibility,
   compilePreviousArtifactForCompatibility,
   compileRetainedArtifactForCompatibility,
@@ -30,6 +31,7 @@ import { compileWorld } from './pipeline.js';
 import { resolveCompilerInput } from './resolve.js';
 import {
   createGoldenCompilerInput,
+  createGovernanceGoldenCompilerInput,
   createLegacyGoldenCompilerInput,
   createPreviousGoldenCompilerInput,
   createRetainedGoldenCompilerInput,
@@ -38,7 +40,8 @@ import { validateResolvedInput } from './validate.js';
 import retainedGolden from './fixtures/floating-guild-city.m8.golden.json';
 import legacyGolden from './fixtures/floating-guild-city.golden.json';
 import previousGolden from './fixtures/harbor-city.m9.golden.json';
-import currentGolden from './fixtures/harbor-city.m10.golden.json';
+import governanceGolden from './fixtures/harbor-city.m10.golden.json';
+import currentGolden from './fixtures/harbor-city.m11.golden.json';
 
 function goldenStages() {
   const resolved = resolveCompilerInput(createGoldenCompilerInput());
@@ -54,7 +57,7 @@ function goldenStages() {
   return { linked: linked.value!, lowered: lowered.value!, normalized: normalized.value! };
 }
 
-function resignArtifact(artifact: CompiledArtifactV4): CompiledArtifactV4 {
+function resignArtifact(artifact: CompiledArtifactV5): CompiledArtifactV5 {
   artifact.canonicalBytes = canonicalJson(artifact.world);
   artifact.contentHash = sha256Utf8(artifact.canonicalBytes);
   return artifact;
@@ -119,6 +122,27 @@ describe('pure deterministic compiler', () => {
     expect(verifyCompiledArtifact(result.artifact).valid).toBe(true);
   });
 
+  it('preserves the exact reviewed compiler 1.3/artifact 4 golden', () => {
+    const result = compileGovernanceArtifactForCompatibility(createGovernanceGoldenCompilerInput());
+    expect(result.diagnostics).toEqual([]);
+    expect(result.artifact).not.toBeNull();
+    expect({
+      artifactHash: result.artifact?.contentHash,
+      artifactSchemaVersion: result.artifact?.artifactSchemaVersion,
+      canonicalByteLength:
+        result.artifact && Buffer.byteLength(result.artifact.canonicalBytes, 'utf8'),
+      compilerConfigVersion: result.artifact?.world.compilerConfigVersion,
+      compilerVersion: result.artifact?.world.compilerVersion,
+      counts: result.artifact?.world.counts,
+      economySeedPlanHash: result.artifact?.world.economySeedPlanHash,
+      governanceSeedPlanHash: result.artifact?.world.governanceSeedPlanHash,
+      inputHash: result.inputHash,
+      manifestContentHash: result.artifact?.world.manifestContentHash,
+      worldGraphSchemaVersion: result.artifact?.world.worldGraphSchemaVersion,
+    }).toEqual(governanceGolden);
+    expect(verifyCompiledArtifact(result.artifact).valid).toBe(true);
+  });
+
   it('runs resolve → validate → normalize → lower → link → emit', () => {
     const input = createGoldenCompilerInput();
     const resolved = resolveCompilerInput(input);
@@ -146,7 +170,7 @@ describe('pure deterministic compiler', () => {
     expect(verifyCompiledArtifact(emitted.value!)).toMatchObject({ valid: true });
   });
 
-  it('compiles the approved M10 governed harbor city with closed economy and charter seeds', () => {
+  it('compiles the approved M11 harbor city with geography, closed economy, and charter seeds', () => {
     const result = compileWorld(createGoldenCompilerInput());
     expect(result.diagnostics.filter((entry) => entry.severity === 'error')).toEqual([]);
     expect(result.successfulStage).toBe('emit');
@@ -314,6 +338,7 @@ describe('pure deterministic compiler', () => {
       worldGraphSchemaVersion: result.artifact?.world.worldGraphSchemaVersion,
       artifactSchemaVersion: result.artifact?.world.artifactSchemaVersion,
       economySeedPlanHash: result.artifact?.world.economySeedPlanHash,
+      geographySeedPlanHash: result.artifact?.world.geographySeedPlanHash,
       governanceSeedPlanHash: result.artifact?.world.governanceSeedPlanHash,
     }).toEqual(currentGolden);
     expect(result.artifact?.canonicalBytes).not.toContain('018f8652-3cb6-7d52-904b-cce7901d7e26');
@@ -651,7 +676,7 @@ describe('pure deterministic compiler', () => {
 
   it('rejects re-hashed artifacts whose compiled graph violates semantic invariants', () => {
     const artifact = compileWorld(createGoldenCompilerInput()).artifact!;
-    const diagnosticCodes = (changed: CompiledArtifactV4): string[] =>
+    const diagnosticCodes = (changed: CompiledArtifactV5): string[] =>
       verifyCompiledArtifact(resignArtifact(changed)).diagnostics.map((entry) => entry.code);
 
     const dangling = structuredClone(artifact);
