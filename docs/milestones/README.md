@@ -15,7 +15,8 @@ Canonical records:
 - [Milestone 07 — Deterministic clock and scheduler](./07-deterministic-clock-scheduler-state.md) ([compatibility pointer](./M07-handoff.md)) — complete and sealed
 - [Milestone 08 — Wallets, transfers, and ownership](./08-wallets-transfers-ownership-state.md) ([compatibility pointer](./M08-handoff.md)) — complete and sealed
 - [Milestone 09 — Production, businesses, jobs, markets, treasury, and tax](./09-production-businesses-jobs-markets-tax-state.md) ([compatibility handoff](./M09-handoff.md)) — complete and sealed
-- [Milestone 10 — Governance, laws, proposals, voting, and elections](./10-governance-laws-proposals-voting-elections-state.md) — implementation complete; final acceptance in progress (not sealed)
-- Milestones 11–16 — sequentially locked until each immediately preceding milestone is explicitly sealed.
+- [Milestone 10 — Governance, laws, proposals, voting, and elections](./10-governance-laws-proposals-voting-elections-state.md) ([compatibility handoff](./M10-handoff.md)) — complete and sealed
+- Milestone 11 — **authorized** with the complete M10 state and handoff as cumulative inputs.
+- Milestones 12–16 — sequentially locked until each immediately preceding milestone is explicitly sealed.
 
 Do not begin a later milestone while the immediately preceding canonical record is marked incomplete or awaiting acceptance evidence.

@@ -283,6 +283,7 @@ The authorized read routes are:
 - `GET /api/v1/worlds/:id/governance/proposals/:proposalId/receipt` and `/result`;
 - `GET /api/v1/worlds/:id/governance/elections`;
 - `GET /api/v1/worlds/:id/governance/elections/:electionId/candidates`, `/receipt`, and `/result`;
+- `GET /api/v1/worlds/:id/governance/capabilities` for bounded allow/deny decisions for the authenticated caller without restricted eligibility or secret-ballot reads;
 - `GET /api/v1/worlds/:id/governance/audit`;
 - `GET /api/v1/worlds/:id/governance/stream` for an authorized resumable SSE invalidation stream.
 

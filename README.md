@@ -1,6 +1,6 @@
 # WorldGraph (Anvil)
 
-WorldGraph is an AI-native platform for creating and inhabiting persistent multiplayer societies. Anvil is its closed-alpha city-state implementation. Milestones 1–8 are sealed. Milestone 9 is implemented but not sealed: compiler `1.2.0` adds a deterministic productive-commerce plan on top of the exact retained `1.1.0` and `1.0.0` lanes; PostgreSQL-authoritative commands now cover resources, businesses, employment, scheduled production, fixed-price trade, treasury tax, reconciliation, and narrowly audited recovery. Governance, browser realtime play, generated media, geography, and WebGL remain intentionally absent until later milestones. See the M09 state record for the verification gates that remain environment-blocked.
+WorldGraph is an AI-native platform for creating and inhabiting persistent multiplayer societies. Anvil is its closed-alpha city-state implementation. Milestones 1–10 are sealed. Compiler `1.3.0`/artifact 4 adds a deterministic governance seed plan on top of the exact retained `1.2.0`, `1.1.0`, and `1.0.0` lanes; PostgreSQL-authoritative commands now cover productive commerce plus charter/laws/proposals/ballots/elections, typed enactment, and audited override/repair. Browser realtime multiplayer, geography/WebGL, generated media, and later milestones remain intentionally gated. See the M10 state record and handoff for the sealed compatibility head that authorizes Milestone 11.
 
 ## Quick start
 
