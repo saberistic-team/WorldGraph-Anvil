@@ -10,8 +10,10 @@
     "0007_command_event_ledger.sql": "4ab7ec51af8d137b219f7796e2b41c97b5e49979dea47613cf4323f0d3b3781f",
     "0008_deterministic_clock_scheduler.sql": "48bac393d34660a146ca6d65f9a228e3a0d438cc80ccabba5b6ec7c721c32f74",
     "0009_wallets_transfers_ownership.sql": "2a7236fa86d9744a15612ad79319683a976e61f56bce3f9f4a95e619801b205e",
-    "0010_production_business_market_tax.sql": "24b68fd1789c303f937c01dcc5e15c238c253e0fdd6391cac1c9c5f691bb8f75",
+    "0010_production_business_market_tax.sql": "6cb7ba473224fc08ad306771db8096aa4f649c28910619144c971f05d91524e4",
     "0011_commerce_projection_repair.sql": "9b1923c5ccabe62abb1502f7a525f0052bd7c3e015b0ec41aa1bb7833fa7c3b6",
-    "0012_commerce_reconciliation_integrity.sql": "44de5f5ee34430d32b5b6866f4469dc7e843293f378490b935ca7f80295a4709"
+    "0012_commerce_reconciliation_integrity.sql": "f46f1c39b0e5e8365a7175c96fc72d72e7e0243d7d6e1a010aa31f1aa539aced",
+    "0013_governance_laws_elections.sql": "de9e3476f807c18301d4bcab05210e849129b9fd6ee2f225de7a500fce88fd46",
+    "0014_governance_read_capabilities.sql": "c589912323b150085a1f2b4f9dcdba55b16921c56525c73278e3f312a9eaa99b"
   }
 }

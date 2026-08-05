@@ -139,6 +139,10 @@ const EMBEDDED_SQL_DDL = new RegExp(
 );
 
 export interface BoundedJsonValidationOptions {
+  maxArrayItems?: number;
+  maxDepth?: number;
+  maxNodes?: number;
+  maxProperties?: number;
   pointer?: string;
   rejectExecutableContent?: boolean;
 }
@@ -245,15 +249,19 @@ function inspectJson(
   issues: PrimitiveValidationIssue[],
   options: BoundedJsonValidationOptions,
 ): void {
-  if (state.nodes >= 2_000) {
+  const maxArrayItems = options.maxArrayItems ?? 200;
+  const maxDepth = options.maxDepth ?? 12;
+  const maxNodes = options.maxNodes ?? 2_000;
+  const maxProperties = options.maxProperties ?? 500;
+  if (state.nodes >= maxNodes) {
     if (!issues.some((entry) => entry.code === 'JSON_NODE_LIMIT_EXCEEDED')) {
       issues.push(issue('JSON_NODE_LIMIT_EXCEEDED', pointer, 'JSON contains too many values.'));
     }
     return;
   }
   state.nodes += 1;
-  if (depth > 12) {
-    issues.push(issue('JSON_DEPTH_EXCEEDED', pointer, 'JSON depth cannot exceed 12.'));
+  if (depth > maxDepth) {
+    issues.push(issue('JSON_DEPTH_EXCEEDED', pointer, `JSON depth cannot exceed ${maxDepth}.`));
     return;
   }
   if (typeof value === 'string') {
@@ -269,10 +277,16 @@ function inspectJson(
   }
   if (!value || typeof value !== 'object') return;
   if (Array.isArray(value)) {
-    if (value.length > 200)
-      issues.push(issue('JSON_ARRAY_LIMIT_EXCEEDED', pointer, 'Arrays cannot exceed 200 values.'));
+    if (value.length > maxArrayItems)
+      issues.push(
+        issue(
+          'JSON_ARRAY_LIMIT_EXCEEDED',
+          pointer,
+          `Arrays cannot exceed ${maxArrayItems} values.`,
+        ),
+      );
     value
-      .slice(0, 200)
+      .slice(0, maxArrayItems)
       .forEach((item, index) =>
         inspectJson(item, `${pointer}/${index}`, state, depth + 1, issues, options),
       );
@@ -283,12 +297,16 @@ function inspectJson(
   );
   const normalizedKeys = new Map<string, string>();
   state.properties += entries.length;
-  if (state.properties > 500) {
+  if (state.properties > maxProperties) {
     issues.push(
-      issue('JSON_PROPERTY_LIMIT_EXCEEDED', pointer, 'JSON cannot exceed 500 properties.'),
+      issue(
+        'JSON_PROPERTY_LIMIT_EXCEEDED',
+        pointer,
+        `JSON cannot exceed ${maxProperties} properties.`,
+      ),
     );
   }
-  const remainingProperties = Math.max(0, 500 - (state.properties - entries.length));
+  const remainingProperties = Math.max(0, maxProperties - (state.properties - entries.length));
   for (const [key, item] of entries.slice(0, remainingProperties)) {
     const child = `${pointer}/${pointerToken(key)}`;
     if (FORBIDDEN_KEYS.has(key)) {

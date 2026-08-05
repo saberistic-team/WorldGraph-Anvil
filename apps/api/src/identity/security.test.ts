@@ -47,10 +47,24 @@ describe('identity security primitives', () => {
       redactAuditMetadata({
         csrfToken: 'secret',
         inviteLink: 'secret',
+        approvalExpiresAt: '2026-08-03T12:15:00.000Z',
+        approvalIssuedAt: '2026-08-03T12:00:00.000Z',
+        commandId: '018f8652-3cb6-7d52-904b-cce7901d7e24',
+        commandRequestHash: 'a'.repeat(64),
+        commandType: 'RepairGovernanceResultV1',
+        method: 'password',
         password: 'secret',
         registrationMode: 'closed_alpha_local',
         safe: 'not-allowlisted',
       }),
-    ).toEqual({ registrationMode: 'closed_alpha_local' });
+    ).toEqual({
+      approvalExpiresAt: '2026-08-03T12:15:00.000Z',
+      approvalIssuedAt: '2026-08-03T12:00:00.000Z',
+      commandId: '018f8652-3cb6-7d52-904b-cce7901d7e24',
+      commandRequestHash: 'a'.repeat(64),
+      commandType: 'RepairGovernanceResultV1',
+      method: 'password',
+      registrationMode: 'closed_alpha_local',
+    });
   });
 });

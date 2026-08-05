@@ -140,7 +140,11 @@ export function ScheduledActionDetail({
                         ? action.payload.payrollRecordId
                         : 'listingId' in action.payload
                           ? action.payload.listingId
-                          : action.payload.taxPolicyId}
+                          : 'taxPolicyId' in action.payload
+                            ? action.payload.taxPolicyId
+                            : 'proposalId' in action.payload
+                              ? action.payload.proposalId
+                              : action.payload.electionId}
                   </dd>
                 </div>
               </dl>

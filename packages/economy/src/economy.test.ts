@@ -298,9 +298,7 @@ describe('locks, seed plan, and reconciliation', () => {
       effectiveUntilTick: null,
       stableKey: 'tax-policy:guild-council:sales-b',
     };
-    expect(() =>
-      assertNonOverlappingEconomySeedTaxPolicies([sales, adjacent]),
-    ).not.toThrow();
+    expect(() => assertNonOverlappingEconomySeedTaxPolicies([sales, adjacent])).not.toThrow();
     expectCode(
       () =>
         assertNonOverlappingEconomySeedTaxPolicies([

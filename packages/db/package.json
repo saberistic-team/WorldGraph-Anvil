@@ -7,7 +7,7 @@
     ".": "./src/index.ts"
   },
   "scripts": {
-    "build": "tsup src/index.ts --format esm --dts --clean",
+    "build": "tsup",
     "bootstrap": "tsx src/cli/bootstrap.ts",
     "clean": "rm -rf dist",
     "economy": "tsx src/cli/operator.ts economy",

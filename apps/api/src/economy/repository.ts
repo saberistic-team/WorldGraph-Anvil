@@ -75,7 +75,7 @@ interface SummaryRow extends QueryResultRow {
   plan_hash: Buffer | null;
   projection_checksum: Buffer | null;
   reconciliation_status: 'current' | 'failed' | 'mismatch' | 'pending' | null;
-  source_kind: 'compiler_1_1' | 'legacy_1_0_adapter' | null;
+  source_kind: 'compiler_1_1' | 'compiler_1_2' | 'legacy_1_0_adapter' | null;
   state_revision: string;
   version_compiler_version: string;
   world_id: string;
@@ -401,9 +401,11 @@ export class PostgresEconomyQueryRepository {
         sourceKind:
           row.source_kind === 'compiler_1_1'
             ? 'compiler_1_1'
-            : row.source_kind === 'legacy_1_0_adapter'
-              ? 'legacy_adapter'
-              : null,
+            : row.source_kind === 'compiler_1_2'
+              ? 'compiler_1_2'
+              : row.source_kind === 'legacy_1_0_adapter'
+                ? 'legacy_adapter'
+                : null,
       },
       stateRevision: row.state_revision,
       status,

@@ -357,6 +357,39 @@ export class PostgresCommandRepository implements CommandRepository, CommandTran
   public async insertReceived(input: ReceivedCommandWrite): Promise<void> {
     this.economyCommandObserved = isEconomyCommandType(input.commandType);
     try {
+      if (input.rateLimitScopeHash === null) {
+        await this.executor.query(
+          `insert into command_records(
+             id, world_id, command_type, command_schema_version, actor_type, actor_id,
+             payload, payload_hash, payload_classification,
+             idempotency_key, request_hash,
+             expected_world_version, expected_state_revision, expected_aggregate_version,
+             correlation_id, causation_id, requested_at
+           ) values (
+             $1,$2,$3,$4,$5,$6,null,$7,$8,$9,$10,$11::bigint,$12::bigint,$13::bigint,
+             $14,$15,$16
+           )`,
+          [
+            input.commandId,
+            input.worldId,
+            input.commandType,
+            input.schemaVersion,
+            input.actorType,
+            input.actorId,
+            input.payloadHash,
+            input.payloadClassification,
+            input.idempotencyKey,
+            input.requestHash,
+            input.expectedWorldVersion,
+            input.expectedStateRevision,
+            input.expectedAggregateVersion,
+            input.correlationId,
+            input.causationId,
+            input.requestedAt,
+          ],
+        );
+        return;
+      }
       await this.executor.query(
         `insert into command_records(
            id, world_id, command_type, command_schema_version, actor_type, actor_id,

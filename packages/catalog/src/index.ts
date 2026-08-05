@@ -1,5 +1,6 @@
 export * from './dependencies.js';
 export * from './embedding.js';
+export * from './governance-seed.js';
 export * from './harbor-seed.js';
 export * from './retrieval.js';
 export * from './search.js';

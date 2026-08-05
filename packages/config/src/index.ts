@@ -37,6 +37,20 @@ export interface RuntimeConfig {
   enableLocalRegistration: boolean;
   enableOperationalSmoke: boolean;
   environment: Environment;
+  governanceContestRateLimitPerHour?: number;
+  governanceContestsEnabled?: boolean;
+  governanceEnactmentEnabled?: boolean;
+  governanceNominationRateLimitPerMinute?: number;
+  governanceOverridesEnabled?: boolean;
+  governanceScheduleBatchSize?: number;
+  governanceScheduleEnabled?: boolean;
+  governanceScheduleReconciliationIntervalMs?: number;
+  governanceSponsorRateLimitPerMinute?: number;
+  governanceStepUpTtlSeconds?: number;
+  governanceTallyDatabaseUrl?: string;
+  governanceTwoPersonControlEnabled?: boolean;
+  governanceVoteRateLimitPerMinute?: number;
+  governanceVotingEnabled?: boolean;
   logLevel: 'debug' | 'error' | 'fatal' | 'info' | 'trace' | 'warn';
   manifestGenerationDailyBudgetMicrounits: number;
   manifestGenerationEnabled: boolean;
@@ -264,6 +278,13 @@ export function loadRuntimeConfig(
 
   const otelEndpoint = env.OTEL_EXPORTER_OTLP_ENDPOINT?.trim();
   if (otelEndpoint) parseUrl(otelEndpoint, 'OTEL_EXPORTER_OTLP_ENDPOINT', ['http:', 'https:']);
+  const governanceTallyDatabaseUrl = env.GOVERNANCE_TALLY_DATABASE_URL?.trim();
+  if (governanceTallyDatabaseUrl) {
+    parseUrl(governanceTallyDatabaseUrl, 'GOVERNANCE_TALLY_DATABASE_URL', [
+      'postgres:',
+      'postgresql:',
+    ]);
+  }
 
   const sessionAbsoluteTtlSeconds = parseInteger(
     env,
@@ -394,6 +415,54 @@ export function loadRuntimeConfig(
     enableLocalRegistration,
     enableOperationalSmoke,
     environment,
+    governanceContestRateLimitPerHour: parseInteger(
+      env,
+      'GOVERNANCE_CONTEST_RATE_LIMIT_PER_HOUR',
+      6,
+      1,
+      1_000,
+    ),
+    governanceContestsEnabled: parseBoolean(env, 'GOVERNANCE_CONTESTS_ENABLED', true),
+    governanceEnactmentEnabled: parseBoolean(env, 'GOVERNANCE_ENACTMENT_ENABLED', true),
+    governanceNominationRateLimitPerMinute: parseInteger(
+      env,
+      'GOVERNANCE_NOMINATION_RATE_LIMIT_PER_MINUTE',
+      10,
+      1,
+      1_000,
+    ),
+    governanceOverridesEnabled: parseBoolean(env, 'GOVERNANCE_OVERRIDES_ENABLED', true),
+    governanceScheduleBatchSize: parseInteger(env, 'GOVERNANCE_SCHEDULE_BATCH_SIZE', 25, 1, 250),
+    governanceScheduleEnabled: parseBoolean(env, 'GOVERNANCE_SCHEDULE_ENABLED', true),
+    governanceScheduleReconciliationIntervalMs: parseInteger(
+      env,
+      'GOVERNANCE_SCHEDULE_RECONCILIATION_INTERVAL_MS',
+      1_000,
+      100,
+      60_000,
+    ),
+    governanceSponsorRateLimitPerMinute: parseInteger(
+      env,
+      'GOVERNANCE_SPONSOR_RATE_LIMIT_PER_MINUTE',
+      20,
+      1,
+      1_000,
+    ),
+    governanceStepUpTtlSeconds: parseInteger(env, 'GOVERNANCE_STEP_UP_TTL_SECONDS', 300, 30, 900),
+    ...(governanceTallyDatabaseUrl ? { governanceTallyDatabaseUrl } : {}),
+    governanceTwoPersonControlEnabled: parseBoolean(
+      env,
+      'GOVERNANCE_TWO_PERSON_CONTROL_ENABLED',
+      false,
+    ),
+    governanceVoteRateLimitPerMinute: parseInteger(
+      env,
+      'GOVERNANCE_VOTE_RATE_LIMIT_PER_MINUTE',
+      30,
+      1,
+      1_000,
+    ),
+    governanceVotingEnabled: parseBoolean(env, 'GOVERNANCE_VOTING_ENABLED', true),
     logLevel,
     manifestGenerationDailyBudgetMicrounits,
     manifestGenerationEnabled,

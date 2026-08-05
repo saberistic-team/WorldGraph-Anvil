@@ -68,9 +68,9 @@ describe('commerce command executor guards', () => {
     expect(policyLookup).toContain('and not (id = any($4::uuid[]))');
     expect(policyLookup).toContain('and not (id = any($3::uuid[]))');
     expect(policyLookup).toContain('order by policy_version desc,id limit 1');
-    expect(policyLookup).toContain(
-      "order by case tax_type when 'sales' then 0 else 1 end,policy_version desc,id",
-    );
+    expect(policyLookup).toContain("worldgraph_tax_policy_effective_at_v2($1,'sales'");
+    expect(policyLookup).toContain("worldgraph_tax_policy_effective_at_v2($1,'transaction'");
+    expect(policyLookup).toContain('order by tax_priority,policy_version desc,id');
   });
 
   it('reserves the shared world and due-tick scheduler budget before insertion', async () => {

@@ -15,6 +15,16 @@ import {
   CreatorOverrideUsedPayloadV1Schema,
   DomainEventEnvelopeV1Schema,
   EmploymentContractLifecyclePayloadV1Schema,
+  ElectionBallotRecordedPublicEventV1Schema,
+  ElectionBallotRecordedSecretEventV1Schema,
+  GovernanceCandidacyChangedEventV1Schema,
+  GovernanceLawVersionActivatedEventV1Schema,
+  GovernanceLifecycleEventV1Schema,
+  GovernanceOfficeTermChangedEventV1Schema,
+  GovernanceOverrideExecutedEventV1Schema,
+  GovernanceRepairAppendedEventV1Schema,
+  GovernanceResultFinalizedEventV1Schema,
+  GovernanceSeedPlanAdoptedEventV1Schema,
   InventoryTransferredPayloadV1Schema,
   ManifestApprovedPayloadV1Schema,
   ManifestRevisionCreatedPayloadV1Schema,
@@ -26,6 +36,8 @@ import {
   ProductionFailedPayloadV1Schema,
   ProductionResourcesPayloadV1Schema,
   ProductionRunStartedPayloadV1Schema,
+  ProposalBallotRecordedPublicEventV1Schema,
+  ProposalBallotRecordedSecretEventV1Schema,
   ProjectionRepairAnchoredPayloadV1Schema,
   RenameWorldEntityPayloadV1Schema,
   ScheduledActionCancelledPayloadV1Schema,
@@ -46,6 +58,7 @@ import {
   WorldCommerceInitializedPayloadV1Schema,
   WorldCommerceProjectionRepairedPayloadV1Schema,
   WorldCommerceReconciledPayloadV1Schema,
+  WorldGovernanceInitializedEventV1Schema,
   WorldEntityRenamedPayloadV1Schema,
   WorldInvitationAcceptedPayloadV1Schema,
   WorldInvitationCreatedPayloadV1Schema,
@@ -651,6 +664,84 @@ export function createDefaultEventRegistry(): EventRegistryV1 {
       eventSchemaVersion: 1,
       eventType: 'WorldCommerceProjectionRepairedV1',
       payloadSchema: WorldCommerceProjectionRepairedPayloadV1Schema,
+      reduce: unchangedProjection,
+    })
+    .register({
+      eventSchemaVersion: 1,
+      eventType: 'ProposalBallotRecordedPublicV1',
+      payloadSchema: ProposalBallotRecordedPublicEventV1Schema,
+      reduce: unchangedProjection,
+    })
+    .register({
+      eventSchemaVersion: 1,
+      eventType: 'ProposalBallotRecordedSecretV1',
+      payloadSchema: ProposalBallotRecordedSecretEventV1Schema,
+      reduce: unchangedProjection,
+    })
+    .register({
+      eventSchemaVersion: 1,
+      eventType: 'ElectionBallotRecordedPublicV1',
+      payloadSchema: ElectionBallotRecordedPublicEventV1Schema,
+      reduce: unchangedProjection,
+    })
+    .register({
+      eventSchemaVersion: 1,
+      eventType: 'ElectionBallotRecordedSecretV1',
+      payloadSchema: ElectionBallotRecordedSecretEventV1Schema,
+      reduce: unchangedProjection,
+    })
+    .register({
+      eventSchemaVersion: 1,
+      eventType: 'GovernanceLifecycleChangedV1',
+      payloadSchema: GovernanceLifecycleEventV1Schema,
+      reduce: unchangedProjection,
+    })
+    .register({
+      eventSchemaVersion: 1,
+      eventType: 'WorldGovernanceInitializedV1',
+      payloadSchema: WorldGovernanceInitializedEventV1Schema,
+      reduce: unchangedProjection,
+    })
+    .register({
+      eventSchemaVersion: 1,
+      eventType: 'GovernanceSeedPlanAdoptedV1',
+      payloadSchema: GovernanceSeedPlanAdoptedEventV1Schema,
+      reduce: unchangedProjection,
+    })
+    .register({
+      eventSchemaVersion: 1,
+      eventType: 'GovernanceCandidacyChangedV1',
+      payloadSchema: GovernanceCandidacyChangedEventV1Schema,
+      reduce: unchangedProjection,
+    })
+    .register({
+      eventSchemaVersion: 1,
+      eventType: 'GovernanceResultFinalizedV1',
+      payloadSchema: GovernanceResultFinalizedEventV1Schema,
+      reduce: unchangedProjection,
+    })
+    .register({
+      eventSchemaVersion: 1,
+      eventType: 'GovernanceLawVersionActivatedV1',
+      payloadSchema: GovernanceLawVersionActivatedEventV1Schema,
+      reduce: unchangedProjection,
+    })
+    .register({
+      eventSchemaVersion: 1,
+      eventType: 'GovernanceOfficeTermChangedV1',
+      payloadSchema: GovernanceOfficeTermChangedEventV1Schema,
+      reduce: unchangedProjection,
+    })
+    .register({
+      eventSchemaVersion: 1,
+      eventType: 'GovernanceOverrideExecutedV1',
+      payloadSchema: GovernanceOverrideExecutedEventV1Schema,
+      reduce: unchangedProjection,
+    })
+    .register({
+      eventSchemaVersion: 1,
+      eventType: 'GovernanceRepairAppendedV1',
+      payloadSchema: GovernanceRepairAppendedEventV1Schema,
       reduce: unchangedProjection,
     });
 }

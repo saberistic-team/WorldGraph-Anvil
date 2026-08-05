@@ -12,6 +12,10 @@ export interface PostgresReadinessProbe {
   query(queryText: string): Promise<unknown>;
 }
 
+export interface WorkerHealthDependencies {
+  governanceTally?: PostgresReadinessProbe;
+}
+
 async function withinDeadline<T>(operation: Promise<T>, timeoutMs: number): Promise<T> {
   let timeout: NodeJS.Timeout | undefined;
   try {
@@ -32,6 +36,7 @@ export function createHealthServer(
   postgres: PostgresReadinessProbe,
   logger: Logger,
   timeoutMs: number,
+  dependencies: WorkerHealthDependencies = {},
 ): Server {
   return createServer((request, response) => {
     response.setHeader('cache-control', 'no-store');
@@ -42,37 +47,39 @@ export function createHealthServer(
       return;
     }
     if (request.url === '/health/ready') {
-      void Promise.allSettled([
+      const probes = [
         withinDeadline(redis.ping(), timeoutMs),
         withinDeadline(postgres.query('select 1 as ready'), timeoutMs),
-      ]).then(([redisResult, postgresResult]) => {
+        ...(dependencies.governanceTally
+          ? [withinDeadline(dependencies.governanceTally.query('select 1 as ready'), timeoutMs)]
+          : []),
+      ];
+      void Promise.allSettled(probes).then(([redisResult, postgresResult, tallyResult]) => {
         const redisReady = redisResult?.status === 'fulfilled' && redisResult.value === 'PONG';
         const postgresReady = postgresResult?.status === 'fulfilled';
-        const ready = redisReady && postgresReady;
+        const tallyReady =
+          dependencies.governanceTally === undefined || tallyResult?.status === 'fulfilled';
+        const ready = redisReady && postgresReady && tallyReady;
+        const components = {
+          ...(dependencies.governanceTally
+            ? { governanceTally: tallyReady ? 'healthy' : 'unavailable' }
+            : {}),
+          postgresql: postgresReady ? 'healthy' : 'unavailable',
+          redis: redisReady ? 'healthy' : 'unavailable',
+        };
         telemetry.setReadiness('worker', ready);
         if (!ready) {
-          logger.warn(
-            {
-              components: {
-                postgresql: postgresReady ? 'healthy' : 'unavailable',
-                redis: redisReady ? 'healthy' : 'unavailable',
-              },
-            },
-            'worker.readiness_failed',
-          );
+          logger.warn({ components }, 'worker.readiness_failed');
         }
         response.writeHead(ready ? 200 : 503).end(
           JSON.stringify(
             ready
               ? {
-                  components: { postgresql: 'healthy', redis: 'healthy' },
+                  components,
                   status: 'ready',
                 }
               : {
-                  components: {
-                    postgresql: postgresReady ? 'healthy' : 'unavailable',
-                    redis: redisReady ? 'healthy' : 'unavailable',
-                  },
+                  components,
                   error: {
                     code: 'DEPENDENCY_NOT_READY',
                     message: 'Worker dependencies are unavailable.',

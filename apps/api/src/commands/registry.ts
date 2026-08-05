@@ -17,6 +17,19 @@ import {
   EndEmploymentContractPayloadV1Schema,
   FreezeCurrencyPayloadV1Schema,
   FreezeWalletPayloadV1Schema,
+  InitializeWorldGovernancePayloadV1Schema,
+  AdoptGovernanceSeedPlanPayloadV1Schema,
+  CreateProposalPayloadV1Schema,
+  SponsorProposalPayloadV1Schema,
+  WithdrawProposalPayloadV1Schema,
+  CastProposalBallotPayloadV1Schema,
+  NominateCandidatePayloadV1Schema,
+  AcceptNominationPayloadV1Schema,
+  CastElectionBallotPayloadV1Schema,
+  AppointOfficeholderPayloadV1Schema,
+  RemoveOfficeholderPayloadV1Schema,
+  ExecuteCreatorOverridePayloadV1Schema,
+  RepairGovernanceResultPayloadV1Schema,
   InitializeWorldEconomyPayloadV1Schema,
   InitializeWorldCommercePayloadV1Schema,
   IssueCurrencyPayloadV1Schema,
@@ -49,6 +62,19 @@ import {
   type EndEmploymentContractPayloadV1,
   type FreezeCurrencyPayloadV1,
   type FreezeWalletPayloadV1,
+  type InitializeWorldGovernancePayloadV1,
+  type AdoptGovernanceSeedPlanPayloadV1,
+  type CreateProposalPayloadV1,
+  type SponsorProposalPayloadV1,
+  type WithdrawProposalPayloadV1,
+  type CastProposalBallotPayloadV1,
+  type NominateCandidatePayloadV1,
+  type AcceptNominationPayloadV1,
+  type CastElectionBallotPayloadV1,
+  type AppointOfficeholderPayloadV1,
+  type RemoveOfficeholderPayloadV1,
+  type ExecuteCreatorOverridePayloadV1,
+  type RepairGovernanceResultPayloadV1,
   type InitializeWorldEconomyPayloadV1,
   type InitializeWorldCommercePayloadV1,
   type IssueCurrencyPayloadV1,
@@ -104,6 +130,19 @@ export const CREATE_MARKET_LISTING_COMMAND = 'CreateMarketListingV1' as const;
 export const CANCEL_MARKET_LISTING_COMMAND = 'CancelMarketListingV1' as const;
 export const PURCHASE_MARKET_LISTING_COMMAND = 'PurchaseMarketListingV1' as const;
 export const RECONCILE_WORLD_COMMERCE_COMMAND = 'ReconcileWorldCommerceV1' as const;
+export const INITIALIZE_WORLD_GOVERNANCE_COMMAND = 'InitializeWorldGovernanceV1' as const;
+export const ADOPT_GOVERNANCE_SEED_PLAN_COMMAND = 'AdoptGovernanceSeedPlanV1' as const;
+export const CREATE_PROPOSAL_COMMAND = 'CreateProposalV1' as const;
+export const SPONSOR_PROPOSAL_COMMAND = 'SponsorProposalV1' as const;
+export const WITHDRAW_PROPOSAL_COMMAND = 'WithdrawProposalV1' as const;
+export const CAST_PROPOSAL_BALLOT_COMMAND = 'CastProposalBallotV1' as const;
+export const NOMINATE_CANDIDATE_COMMAND = 'NominateCandidateV1' as const;
+export const ACCEPT_NOMINATION_COMMAND = 'AcceptNominationV1' as const;
+export const CAST_ELECTION_BALLOT_COMMAND = 'CastElectionBallotV1' as const;
+export const APPOINT_OFFICEHOLDER_COMMAND = 'AppointOfficeholderV1' as const;
+export const REMOVE_OFFICEHOLDER_COMMAND = 'RemoveOfficeholderV1' as const;
+export const EXECUTE_CREATOR_GOVERNANCE_OVERRIDE_COMMAND = 'ExecuteCreatorOverrideV1' as const;
+export const REPAIR_GOVERNANCE_RESULT_COMMAND = 'RepairGovernanceResultV1' as const;
 export const ECONOMY_PUBLIC_COMMAND_TYPES = new Set<string>([
   INITIALIZE_WORLD_ECONOMY_COMMAND,
   ADOPT_LEGACY_ECONOMY_SEED_PLAN_COMMAND,
@@ -132,6 +171,21 @@ export const COMMERCE_PUBLIC_COMMAND_TYPES = new Set<string>([
   CANCEL_MARKET_LISTING_COMMAND,
   PURCHASE_MARKET_LISTING_COMMAND,
   RECONCILE_WORLD_COMMERCE_COMMAND,
+]);
+export const GOVERNANCE_PUBLIC_COMMAND_TYPES = new Set<string>([
+  INITIALIZE_WORLD_GOVERNANCE_COMMAND,
+  ADOPT_GOVERNANCE_SEED_PLAN_COMMAND,
+  CREATE_PROPOSAL_COMMAND,
+  SPONSOR_PROPOSAL_COMMAND,
+  WITHDRAW_PROPOSAL_COMMAND,
+  CAST_PROPOSAL_BALLOT_COMMAND,
+  NOMINATE_CANDIDATE_COMMAND,
+  ACCEPT_NOMINATION_COMMAND,
+  CAST_ELECTION_BALLOT_COMMAND,
+  APPOINT_OFFICEHOLDER_COMMAND,
+  REMOVE_OFFICEHOLDER_COMMAND,
+  EXECUTE_CREATOR_GOVERNANCE_OVERRIDE_COMMAND,
+  REPAIR_GOVERNANCE_RESULT_COMMAND,
 ]);
 export const RENAMABLE_ENTITY_TYPES = new Set<WorldEntityStatePairV1['entityType']>([
   'actor_blueprint',
@@ -180,6 +234,19 @@ export type RegisteredCommandPayload =
   | CancelMarketListingPayloadV1
   | PurchaseMarketListingPayloadV1
   | ReconcileWorldCommercePayloadV1
+  | InitializeWorldGovernancePayloadV1
+  | AdoptGovernanceSeedPlanPayloadV1
+  | CreateProposalPayloadV1
+  | SponsorProposalPayloadV1
+  | WithdrawProposalPayloadV1
+  | CastProposalBallotPayloadV1
+  | NominateCandidatePayloadV1
+  | AcceptNominationPayloadV1
+  | CastElectionBallotPayloadV1
+  | AppointOfficeholderPayloadV1
+  | RemoveOfficeholderPayloadV1
+  | ExecuteCreatorOverridePayloadV1
+  | RepairGovernanceResultPayloadV1
   | Record<string, never>;
 
 export type AnyRegisteredCommand = RegisteredCommand<RegisteredCommandPayload>;
@@ -451,7 +518,115 @@ function registeredCommands(): AnyRegisteredCommand[] {
       'WorldCommerceReconciledV1',
       ReconcileWorldCommercePayloadV1Schema,
     ),
+    governanceCommand(
+      INITIALIZE_WORLD_GOVERNANCE_COMMAND,
+      'governance.initialize',
+      'world_governance',
+      'WorldGovernanceInitializedV1',
+      InitializeWorldGovernancePayloadV1Schema,
+    ),
+    governanceCommand(
+      ADOPT_GOVERNANCE_SEED_PLAN_COMMAND,
+      'governance.initialize',
+      'governance_seed_plan',
+      'GovernanceSeedPlanAdoptedV1',
+      AdoptGovernanceSeedPlanPayloadV1Schema,
+    ),
+    governanceCommand(
+      CREATE_PROPOSAL_COMMAND,
+      'governance.proposal.create',
+      'proposal',
+      'GovernanceLifecycleChangedV1',
+      CreateProposalPayloadV1Schema,
+    ),
+    governanceCommand(
+      SPONSOR_PROPOSAL_COMMAND,
+      'governance.proposal.sponsor',
+      'proposal',
+      'GovernanceLifecycleChangedV1',
+      SponsorProposalPayloadV1Schema,
+    ),
+    governanceCommand(
+      WITHDRAW_PROPOSAL_COMMAND,
+      'governance.proposal.withdraw',
+      'proposal',
+      'GovernanceLifecycleChangedV1',
+      WithdrawProposalPayloadV1Schema,
+    ),
+    governanceCommand(
+      CAST_PROPOSAL_BALLOT_COMMAND,
+      'governance.ballot.cast',
+      'governance_contest',
+      'ProposalBallotRecordedSecretV1',
+      CastProposalBallotPayloadV1Schema,
+    ),
+    governanceCommand(
+      NOMINATE_CANDIDATE_COMMAND,
+      'governance.candidate.nominate',
+      'candidacy',
+      'GovernanceCandidacyChangedV1',
+      NominateCandidatePayloadV1Schema,
+    ),
+    governanceCommand(
+      ACCEPT_NOMINATION_COMMAND,
+      'governance.candidate.accept',
+      'candidacy',
+      'GovernanceCandidacyChangedV1',
+      AcceptNominationPayloadV1Schema,
+    ),
+    governanceCommand(
+      CAST_ELECTION_BALLOT_COMMAND,
+      'governance.ballot.cast',
+      'governance_contest',
+      'ElectionBallotRecordedSecretV1',
+      CastElectionBallotPayloadV1Schema,
+    ),
+    governanceCommand(
+      APPOINT_OFFICEHOLDER_COMMAND,
+      'governance.office.appoint',
+      'office_term',
+      'GovernanceOfficeTermChangedV1',
+      AppointOfficeholderPayloadV1Schema,
+    ),
+    governanceCommand(
+      REMOVE_OFFICEHOLDER_COMMAND,
+      'governance.office.remove',
+      'office_term',
+      'GovernanceOfficeTermChangedV1',
+      RemoveOfficeholderPayloadV1Schema,
+    ),
+    governanceCommand(
+      EXECUTE_CREATOR_GOVERNANCE_OVERRIDE_COMMAND,
+      'governance.override.execute',
+      'governance_override',
+      'GovernanceOverrideExecutedV1',
+      ExecuteCreatorOverridePayloadV1Schema,
+    ),
+    governanceCommand(
+      REPAIR_GOVERNANCE_RESULT_COMMAND,
+      'governance.result.repair',
+      'governance_repair',
+      'GovernanceRepairAppendedV1',
+      RepairGovernanceResultPayloadV1Schema,
+    ),
   ];
+}
+
+function governanceCommand(
+  commandType: string,
+  action: AuthorityAction,
+  aggregateType: string,
+  eventType: string,
+  payloadSchema: TSchema,
+): AnyRegisteredCommand {
+  return {
+    action,
+    aggregateType,
+    commandType,
+    eventType,
+    payloadValidator: createValidator<RegisteredCommandPayload>(payloadSchema),
+    schemaVersion: 1,
+  };
 }
 
 function economyCommand(

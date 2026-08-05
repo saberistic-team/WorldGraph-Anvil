@@ -2,10 +2,15 @@ const apiBaseUrl = process.env.API_INTERNAL_URL ?? 'http://127.0.0.1:4000';
 // This exceeds the registry's three-second semantic deadline and the API's default ten-second
 // request deadline, while still bounding a stalled internal dependency.
 export const API_PROXY_TIMEOUT_MS = 12_000;
+export const ARTIFACT_PROXY_TIMEOUT_MS = 30_000;
 
-export async function callApi(path: string, init?: RequestInit): Promise<Response> {
+export async function callApi(
+  path: string,
+  init?: RequestInit,
+  timeoutMs = API_PROXY_TIMEOUT_MS,
+): Promise<Response> {
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), API_PROXY_TIMEOUT_MS);
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
   try {
     return await fetch(new URL(path, apiBaseUrl), {
       ...init,

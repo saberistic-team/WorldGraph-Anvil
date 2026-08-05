@@ -415,7 +415,7 @@ export async function runLiveCommerceBrowserEvidenceReview(input) {
       'exact treasury balance/revenue values',
     );
     await visible(
-      treasury.getByText(input.productionTick, { exact: true }),
+      treasury.getByText(input.lastRevenueTick, { exact: true }),
       'the exact last-revenue tick',
     );
 
@@ -485,7 +485,7 @@ export async function runLiveCommerceBrowserEvidenceReview(input) {
       managerPage.getByRole('heading', { level: 1, name: 'Economy' }),
       'the manager accounting workspace',
     );
-    const wallet = managerPage.getByLabel('Wallet', { exact: true });
+    const wallet = managerPage.getByRole('combobox', { name: 'Wallet', exact: true });
     const businessWallet = wallet.locator(`option[value="${input.businessWalletId}"]`);
     await attached(businessWallet, 'the controlled business-wallet history option');
     await wallet.selectOption(input.businessWalletId);

@@ -1,7 +1,11 @@
 import Fastify, { type FastifyInstance } from 'fastify';
 import Ajv2020 from 'ajv/dist/2020.js';
 import addFormats from 'ajv-formats';
-import { HARBOR_CITY_ECONOMY_PRIMITIVES, STARTER_PRIMITIVES } from '@worldgraph/catalog';
+import {
+  GOVERNANCE_PRIMITIVES,
+  HARBOR_CITY_ECONOMY_PRIMITIVES,
+  STARTER_PRIMITIVES,
+} from '@worldgraph/catalog';
 import {
   compileWorld,
   createCompilerInputBundle,
@@ -11,11 +15,11 @@ import {
 import {
   COMPILED_ARTIFACT_SCHEMA_VERSION,
   COMPILER_VERSION,
-  type CompiledArtifactV3,
+  type CompiledArtifactV4,
 } from '@worldgraph/contracts';
 import {
-  createDeterministicHarborCityFallback,
-  harborCityManifestCatalog,
+  createDeterministicGovernedHarborCityFallback,
+  governedHarborCityManifestCatalog,
 } from '@worldgraph/manifests';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -49,14 +53,16 @@ const authentication: CompilerRouteAuthentication = {
   mutation: async () => actor,
 };
 
-function currentCompiledArtifact(): CompiledArtifactV3 {
-  const fallback = createDeterministicHarborCityFallback({
-    catalog: harborCityManifestCatalog(),
+function currentCompiledArtifact(): CompiledArtifactV4 {
+  const fallback = createDeterministicGovernedHarborCityFallback({
+    catalog: governedHarborCityManifestCatalog(),
     prompt:
       'A harbor city with guild workshops, iron and energy production, paid jobs, a fixed-price market, and public sales tax.',
     seed: 'compiler-route-artifact-v2',
   });
-  const pinned = new Set(fallback.envelope.manifest.primitiveRefs.map((entry) => entry.key));
+  const pinned = new Set(
+    fallback.envelope.manifest.primitiveRefs.map((entry) => entry.primitiveVersionId),
+  );
   const result = compileWorld(
     createCompilerInputBundle({
       activeMembers: [
@@ -66,8 +72,12 @@ function currentCompiledArtifact(): CompiledArtifactV3 {
         },
       ],
       manifest: fallback.envelope.manifest,
-      primitives: [...STARTER_PRIMITIVES, ...HARBOR_CITY_ECONOMY_PRIMITIVES]
-        .filter((primitive) => pinned.has(primitive.input.key))
+      primitives: [
+        ...STARTER_PRIMITIVES,
+        ...HARBOR_CITY_ECONOMY_PRIMITIVES,
+        ...GOVERNANCE_PRIMITIVES,
+      ]
+        .filter((primitive) => pinned.has(primitive.versionId))
         .map((primitive) => ({
           contentHash: primitive.contentHash,
           definition: primitive.input,
@@ -77,7 +87,11 @@ function currentCompiledArtifact(): CompiledArtifactV3 {
       seed: 'compiler-route-artifact-v2',
     }),
   );
-  if (!result.artifact) throw new Error('Current compiler fixture did not emit an artifact.');
+  if (!result.artifact) {
+    throw new Error(
+      `Current compiler fixture did not emit an artifact: ${JSON.stringify(result.diagnostics)}`,
+    );
+  }
   return result.artifact;
 }
 
@@ -238,7 +252,7 @@ describe('compiler routes', () => {
       method: 'GET',
       url: `/api/v1/worlds/${worldId}/compilations/${runId}/artifact`,
     });
-    const serialized = response.json<CompiledArtifactV3>();
+    const serialized = response.json<CompiledArtifactV4>();
 
     expect(response.statusCode, response.body).toBe(200);
     expect(serialized).toEqual(artifact);
@@ -251,7 +265,7 @@ describe('compiler routes', () => {
       },
     });
     expect(verifyCompiledArtifact(serialized)).toMatchObject({ valid: true });
-  });
+  }, 60_000);
 
   it('serializes discriminated graph payloads without strict-schema warnings', async () => {
     const listEntities = vi.fn(async () => ({

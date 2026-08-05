@@ -17,6 +17,8 @@ import {
   type ConfigureWorldClockPayloadV1,
   type IdGenerator,
   type IssueCurrencyPayloadV1,
+  type GovernanceActorMode,
+  type PublicGovernanceCommandRequestV1,
   type ResolveSimulationFailurePayloadV1,
   type ScheduleWorldNoticePayloadV1,
   type ScheduledActionV1,
@@ -28,7 +30,16 @@ import {
 } from '@worldgraph/contracts';
 import { validateCompilerPrivateContent } from '@worldgraph/compiler';
 import { decideRenameWorldEntityV1 } from '@worldgraph/ledger';
-import { economyCommandTraceAttributes, telemetry, withSpan } from '@worldgraph/observability';
+import {
+  economyCommandTraceAttributes,
+  governanceCommandTraceAttributes,
+  telemetry,
+  withSpan,
+} from '@worldgraph/observability';
+import {
+  isPublicGovernanceCommandType,
+  type GovernanceRecentCredentialProof,
+} from '@worldgraph/governance-command';
 import {
   SimulationDomainError,
   advanceSimulationClockV1,
@@ -48,6 +59,11 @@ import {
 import { ApplicationError } from '../application/errors.js';
 import { evaluateAuthority } from '../authority/evaluator.js';
 import { economyCommandRejectionCode } from '../economy/command-executor.js';
+import {
+  governanceExecutionInput,
+  type GovernanceAuthorityPreparationInput,
+  type GovernanceCommandGateway,
+} from '../governance/command-gateway.js';
 import type { AuthenticatedActor } from '../identity/service.js';
 import {
   ACCEPT_ASSET_TRANSFER_OFFER_COMMAND,
@@ -60,6 +76,20 @@ import {
   CREATE_MARKET_LISTING_COMMAND,
   COMMERCE_PUBLIC_COMMAND_TYPES,
   ECONOMY_PUBLIC_COMMAND_TYPES,
+  GOVERNANCE_PUBLIC_COMMAND_TYPES,
+  ADOPT_GOVERNANCE_SEED_PLAN_COMMAND,
+  APPOINT_OFFICEHOLDER_COMMAND,
+  CAST_ELECTION_BALLOT_COMMAND,
+  CAST_PROPOSAL_BALLOT_COMMAND,
+  CREATE_PROPOSAL_COMMAND,
+  EXECUTE_CREATOR_GOVERNANCE_OVERRIDE_COMMAND,
+  INITIALIZE_WORLD_GOVERNANCE_COMMAND,
+  NOMINATE_CANDIDATE_COMMAND,
+  ACCEPT_NOMINATION_COMMAND,
+  REMOVE_OFFICEHOLDER_COMMAND,
+  REPAIR_GOVERNANCE_RESULT_COMMAND,
+  SPONSOR_PROPOSAL_COMMAND,
+  WITHDRAW_PROPOSAL_COMMAND,
   FREEZE_CURRENCY_COMMAND,
   FREEZE_WALLET_COMMAND,
   INITIALIZE_WORLD_ECONOMY_COMMAND,
@@ -127,6 +157,7 @@ export class WorldCommandBus {
     private readonly registry = new WorldCommandRegistry(),
     private readonly economyPolicy: EconomyCommandPolicy = defaultEconomyPolicy,
     private readonly commercePolicy: CommerceCommandPolicy = defaultCommercePolicy,
+    private readonly governanceGateway?: GovernanceCommandGateway,
   ) {}
 
   public async submit(
@@ -135,7 +166,23 @@ export class WorldCommandBus {
     request: SubmitWorldCommand,
     requestId: string,
     submittedAt: Date,
+    recentCredential?: GovernanceRecentCredentialProof,
   ): Promise<CommandSubmissionResult> {
+    const governanceHandler = this.registry.resolve(request.type, request.schemaVersion);
+    if (
+      isPublicGovernanceCommandType(request.type) &&
+      governanceHandler?.payloadValidator.is(request.payload) === true &&
+      request.expectedTick !== undefined
+    ) {
+      return this.submitGovernance(
+        actor,
+        worldId,
+        { ...request, expectedTick: request.expectedTick },
+        requestId,
+        governanceHandler.action,
+        recentCredential,
+      );
+    }
     const requestHash = hash({
       expectedAggregateVersion: request.expectedAggregateVersion,
       expectedStateRevision: request.expectedStateRevision,
@@ -199,6 +246,11 @@ export class WorldCommandBus {
           });
         }
         if (!handler.payloadValidator.is(request.payload)) {
+          return this.rejected(transaction, command, world, submittedAt, {
+            code: 'VALIDATION_FAILED',
+          });
+        }
+        if (GOVERNANCE_PUBLIC_COMMAND_TYPES.has(request.type)) {
           return this.rejected(transaction, command, world, submittedAt, {
             code: 'VALIDATION_FAILED',
           });
@@ -445,6 +497,114 @@ export class WorldCommandBus {
         return outcome;
       } catch (error) {
         span.setAttribute('world.economy.outcome', 'failed_before_result');
+        throw error;
+      }
+    });
+  }
+
+  private async submitGovernance(
+    actor: AuthenticatedActor,
+    worldId: string,
+    request: SubmitWorldCommand & { expectedTick: string },
+    requestId: string,
+    actionCode: GovernanceAuthorityPreparationInput['actionCode'],
+    recentCredential?: GovernanceRecentCredentialProof,
+  ): Promise<CommandSubmissionResult> {
+    if (!this.governanceGateway) {
+      throw new ApplicationError(
+        'GOVERNANCE_COMMAND_UNAVAILABLE',
+        'Governance command execution is unavailable.',
+        503,
+      );
+    }
+    const actorMode = governanceActorMode(request.type, actor.user.platformRole);
+    const resource = governanceCommandResource(request, worldId);
+    const overrideRequested = governanceOverrideIsExplicit(request);
+    const policyResourceType = governancePolicyResourceType(request.type);
+    const preparation = await this.governanceGateway.prepareAuthority({
+      actionCode,
+      actorId: actor.user.id,
+      actorMode,
+      allowActiveLaw: governanceUsesActiveCivicLaw(request.type),
+      overrideRequested,
+      platformRole: actor.user.platformRole,
+      policyActionCode: governancePolicyAction(request.type),
+      ...(policyResourceType ? { policyResourceType } : {}),
+      resourceId: resource.resourceId,
+      resourceKey: resource.resourceKey,
+      resourceType: resource.resourceType,
+      worldId,
+    });
+    if (!preparation) {
+      throw new ApplicationError('NOT_FOUND', 'The requested resource was not found.', 404);
+    }
+    const correlationId = UUID_PATTERN.test(requestId) ? requestId : request.commandId;
+    const governanceCommand = {
+      ...request,
+      actorMode,
+    } as unknown as PublicGovernanceCommandRequestV1;
+    const executionInput = governanceExecutionInput(governanceCommand, preparation, {
+      correlationId,
+      ...(recentCredential ? { recentCredential } : {}),
+      worldId,
+    });
+    return withSpan('world.governance.command', async (span) => {
+      span.setAttributes(
+        governanceCommandTraceAttributes({
+          actorId: actor.user.id,
+          commandId: request.commandId,
+          commandType: request.type,
+          correlationId,
+          ...(request.expectedTick ? { tick: request.expectedTick } : {}),
+          worldId,
+        }),
+      );
+      span.setAttribute('world.governance.outcome', 'executing');
+      try {
+        const execution = await this.governanceGateway!.executePublic(executionInput);
+        const { result } = execution;
+        const rejectionCode =
+          result.status === 'rejected' || result.status === 'failed'
+            ? result.rejectionCode
+            : 'none';
+        telemetry.governanceCommands.add(1, {
+          command_type: request.type,
+          outcome: result.status,
+          rejection_code: rejectionCode,
+        });
+        if (rejectionCode === 'AUTHORIZATION_DENIED') {
+          telemetry.governanceAuthorityDenies.add(1, { action: actionCode });
+        }
+        if (
+          (request.type === CAST_PROPOSAL_BALLOT_COMMAND ||
+            request.type === CAST_ELECTION_BALLOT_COMMAND) &&
+          rejectionCode !== 'none'
+        ) {
+          telemetry.governanceBallotRejections.add(1, { rejection_code: rejectionCode });
+        }
+        if (request.type === EXECUTE_CREATOR_GOVERNANCE_OVERRIDE_COMMAND) {
+          telemetry.governanceOverrides.add(1, { outcome: result.status });
+        }
+        if (request.type === REPAIR_GOVERNANCE_RESULT_COMMAND) {
+          telemetry.governanceRepairs.add(1, { outcome: result.status });
+        }
+        span.setAttributes({
+          'world.governance.event_count': result.eventIds.length,
+          'world.governance.outcome': result.status,
+          'world.governance.replayed': execution.replayed,
+        });
+        if (rejectionCode !== 'none') {
+          span.setAttribute('world.governance.rejection_code', rejectionCode);
+        }
+        return {
+          httpStatus:
+            preparation.hiddenByAuthority && rejectionCode === 'AUTHORIZATION_DENIED'
+              ? 404
+              : resultStatus(result),
+          result,
+        };
+      } catch (error) {
+        span.setAttribute('world.governance.outcome', 'failed_before_result');
         throw error;
       }
     });
@@ -1511,6 +1671,121 @@ function hashHex(value: string): string {
 
 function incrementDecimal(value: string): string {
   return (BigInt(value) + 1n).toString(10);
+}
+
+function governanceActorMode(
+  commandType: string,
+  platformRole: AuthenticatedActor['user']['platformRole'],
+): GovernanceActorMode {
+  if (
+    commandType === INITIALIZE_WORLD_GOVERNANCE_COMMAND ||
+    commandType === ADOPT_GOVERNANCE_SEED_PLAN_COMMAND ||
+    commandType === EXECUTE_CREATOR_GOVERNANCE_OVERRIDE_COMMAND ||
+    commandType === REPAIR_GOVERNANCE_RESULT_COMMAND
+  ) {
+    return platformRole === 'platform_admin' ? 'administrator' : 'creator';
+  }
+  return 'in_world';
+}
+
+function governanceUsesActiveCivicLaw(commandType: string): boolean {
+  return new Set<string>([
+    SPONSOR_PROPOSAL_COMMAND,
+    WITHDRAW_PROPOSAL_COMMAND,
+    CAST_PROPOSAL_BALLOT_COMMAND,
+    NOMINATE_CANDIDATE_COMMAND,
+    ACCEPT_NOMINATION_COMMAND,
+    CAST_ELECTION_BALLOT_COMMAND,
+  ]).has(commandType);
+}
+
+function governancePolicyAction(commandType: string): string | null {
+  if (commandType === CREATE_PROPOSAL_COMMAND) return 'governance.propose';
+  if (commandType === APPOINT_OFFICEHOLDER_COMMAND || commandType === REMOVE_OFFICEHOLDER_COMMAND) {
+    return 'governance.appoint';
+  }
+  return null;
+}
+
+function governancePolicyResourceType(commandType: string): string | undefined {
+  if (commandType === CREATE_PROPOSAL_COMMAND) return 'proposal';
+  if (commandType === APPOINT_OFFICEHOLDER_COMMAND || commandType === REMOVE_OFFICEHOLDER_COMMAND) {
+    return 'office';
+  }
+  return undefined;
+}
+
+function governanceOverrideIsExplicit(request: SubmitWorldCommand): boolean {
+  if (request.type === EXECUTE_CREATOR_GOVERNANCE_OVERRIDE_COMMAND) {
+    return request.payload.confirmation === 'EXECUTE EXPLICIT GOVERNANCE OVERRIDE';
+  }
+  if (request.type === REPAIR_GOVERNANCE_RESULT_COMMAND) {
+    return request.payload.confirmation === 'APPEND LINKED GOVERNANCE REPAIR';
+  }
+  return false;
+}
+
+function governanceCommandResource(
+  request: SubmitWorldCommand,
+  worldId: string,
+): { resourceId: string; resourceKey: string | null; resourceType: string } {
+  const payload = request.payload;
+  switch (request.type) {
+    case CREATE_PROPOSAL_COMMAND:
+      return {
+        resourceId: recordString(payload, 'institutionId') ?? worldId,
+        resourceKey: recordString(payload, 'proposalKey'),
+        resourceType: 'institution',
+      };
+    case SPONSOR_PROPOSAL_COMMAND:
+    case WITHDRAW_PROPOSAL_COMMAND:
+    case CAST_PROPOSAL_BALLOT_COMMAND:
+      return {
+        resourceId: recordString(payload, 'proposalId') ?? worldId,
+        resourceKey: null,
+        resourceType: 'proposal',
+      };
+    case NOMINATE_CANDIDATE_COMMAND:
+    case ACCEPT_NOMINATION_COMMAND:
+    case CAST_ELECTION_BALLOT_COMMAND:
+      return {
+        resourceId: recordString(payload, 'electionId') ?? worldId,
+        resourceKey: null,
+        resourceType: 'election',
+      };
+    case APPOINT_OFFICEHOLDER_COMMAND:
+      return {
+        resourceId: recordString(payload, 'officeId') ?? worldId,
+        resourceKey: null,
+        resourceType: 'office',
+      };
+    case REMOVE_OFFICEHOLDER_COMMAND:
+      return {
+        resourceId: recordString(payload, 'termId') ?? worldId,
+        resourceKey: null,
+        resourceType: 'office_term',
+      };
+    case EXECUTE_CREATOR_GOVERNANCE_OVERRIDE_COMMAND:
+      return { resourceId: worldId, resourceKey: null, resourceType: 'governance_override' };
+    case REPAIR_GOVERNANCE_RESULT_COMMAND:
+      return {
+        resourceId: recordString(payload, 'sourceResultId') ?? worldId,
+        resourceKey: null,
+        resourceType: 'governance_result',
+      };
+    case ADOPT_GOVERNANCE_SEED_PLAN_COMMAND:
+      return {
+        resourceId: recordString(payload, 'compiledWorldVersionId') ?? worldId,
+        resourceKey: null,
+        resourceType: 'governance_seed_plan',
+      };
+    default:
+      return { resourceId: worldId, resourceKey: null, resourceType: 'world_governance' };
+  }
+}
+
+function recordString(value: Record<string, unknown>, key: string): string | null {
+  return typeof value[key] === 'string' ? value[key] : null;
 }
 
 function resultStatus(result: WorldCommandResultTransport): 200 | 403 | 404 | 409 | 422 {

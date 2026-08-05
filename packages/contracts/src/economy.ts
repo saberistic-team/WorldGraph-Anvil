@@ -17,6 +17,8 @@ import {
   PREVIOUS_COMPILED_ARTIFACT_SCHEMA_VERSION,
   PREVIOUS_COMPILER_VERSION,
   PREVIOUS_ECONOMY_RECONCILIATION_SCHEMA_VERSION,
+  RETAINED_COMPILED_ARTIFACT_SCHEMA_VERSION,
+  RETAINED_COMPILER_VERSION,
   WALLET_SCHEMA_VERSION,
 } from './versions.js';
 
@@ -594,8 +596,8 @@ export const EconomySeedSourceV1Schema = Type.Union([
       adapterId: Type.Literal('CompiledEconomySeedAdapterV1'),
       adapterVersion: EconomySeedAdapterVersionSchema,
       artifactHash: EconomyHashSchema,
-      artifactSchemaVersion: Type.Literal(PREVIOUS_COMPILED_ARTIFACT_SCHEMA_VERSION),
-      compilerVersion: Type.Literal(PREVIOUS_COMPILER_VERSION),
+      artifactSchemaVersion: Type.Literal(RETAINED_COMPILED_ARTIFACT_SCHEMA_VERSION),
+      compilerVersion: Type.Literal(RETAINED_COMPILER_VERSION),
       planHash: EconomyHashSchema,
     },
     { additionalProperties: false },
@@ -613,16 +615,32 @@ export const EconomySeedSourceV1Schema = Type.Union([
   ),
 ]);
 
-export const EconomySeedSourceV2Schema = Type.Object(
-  {
-    adapterId: Type.Literal('CompiledEconomySeedAdapterV2'),
-    adapterVersion: EconomySeedAdapterVersionSchema,
-    artifactHash: EconomyHashSchema,
-    artifactSchemaVersion: Type.Literal(COMPILED_ARTIFACT_SCHEMA_VERSION),
-    compilerVersion: Type.Literal(COMPILER_VERSION),
-    planHash: EconomyHashSchema,
-  },
-  { $id: 'EconomySeedSourceV2', additionalProperties: false },
+const EconomySeedSourceV2Common = {
+  adapterId: Type.Literal('CompiledEconomySeedAdapterV2'),
+  adapterVersion: EconomySeedAdapterVersionSchema,
+  artifactHash: EconomyHashSchema,
+  planHash: EconomyHashSchema,
+} as const;
+export const EconomySeedSourceV2Schema = Type.Union(
+  [
+    Type.Object(
+      {
+        ...EconomySeedSourceV2Common,
+        artifactSchemaVersion: Type.Literal(PREVIOUS_COMPILED_ARTIFACT_SCHEMA_VERSION),
+        compilerVersion: Type.Literal(PREVIOUS_COMPILER_VERSION),
+      },
+      { additionalProperties: false },
+    ),
+    Type.Object(
+      {
+        ...EconomySeedSourceV2Common,
+        artifactSchemaVersion: Type.Literal(COMPILED_ARTIFACT_SCHEMA_VERSION),
+        compilerVersion: Type.Literal(COMPILER_VERSION),
+      },
+      { additionalProperties: false },
+    ),
+  ],
+  { $id: 'EconomySeedSourceV2' },
 );
 
 export const EconomyRepairBalanceDeltaV1Schema = Type.Object(

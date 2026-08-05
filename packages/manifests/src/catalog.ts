@@ -1,4 +1,8 @@
-import { HARBOR_CITY_ECONOMY_PRIMITIVES, STARTER_PRIMITIVES } from '@worldgraph/catalog';
+import {
+  GOVERNANCE_PRIMITIVES,
+  HARBOR_CITY_ECONOMY_PRIMITIVES,
+  STARTER_PRIMITIVES,
+} from '@worldgraph/catalog';
 import {
   canonicalizeJson,
   type JsonValue,
@@ -84,6 +88,33 @@ export function harborCityManifestCatalog(): ManifestCatalogSnapshot {
       version: entry.input.version,
       versionId: entry.versionId,
     })),
+  };
+}
+
+/** M10 snapshot: the sealed M09 Harbor catalog plus the reviewed plurality ballot. */
+export function governedHarborCityManifestCatalog(): ManifestCatalogSnapshot {
+  const harbor = harborCityManifestCatalog();
+  return {
+    primitives: [
+      ...harbor.primitives,
+      ...GOVERNANCE_PRIMITIVES.map((entry) => ({
+        behaviorRef: entry.input.behaviorRef ?? null,
+        compatibility: jsonObject(entry.input.compatibility),
+        contentHash: entry.contentHash,
+        defaults: jsonObject(entry.input.defaults),
+        dependencies: entry.input.dependencies.map((dependency) => ({
+          key: dependency.key,
+          required: dependency.required ?? true,
+          versionRange: dependency.versionRange,
+        })),
+        key: entry.input.key,
+        kind: entry.input.kind,
+        lifecycle: 'published' as const,
+        parameterSchema: jsonObject(entry.input.parameterSchema),
+        version: entry.input.version,
+        versionId: entry.versionId,
+      })),
+    ],
   };
 }
 

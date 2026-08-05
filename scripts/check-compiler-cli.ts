@@ -7,11 +7,13 @@ import { canonicalJson } from '../packages/contracts/src/index.js';
 import {
   compileLegacyArtifactForCompatibility,
   compilePreviousArtifactForCompatibility,
+  compileRetainedArtifactForCompatibility,
 } from '../packages/compiler/src/compatibility.js';
 import {
   createGoldenCompilerInput,
   createLegacyGoldenCompilerInput,
   createPreviousGoldenCompilerInput,
+  createRetainedGoldenCompilerInput,
 } from '../packages/compiler/src/test-fixture.js';
 
 interface GoldenIdentity {
@@ -41,21 +43,27 @@ async function main(): Promise<void> {
     const secondDirectory = join(directory, 'second');
     const linkedCliPath = join(directory, 'worldgraph');
     const legacyArtifactPath = join(directory, 'legacy-artifact.json');
+    const retainedArtifactPath = join(directory, 'retained-artifact.json');
     const previousArtifactPath = join(directory, 'previous-artifact.json');
     const legacyArtifact = compileLegacyArtifactForCompatibility(
       createLegacyGoldenCompilerInput(),
     ).artifact;
     if (!legacyArtifact) throw new Error('Frozen compiler 1.0 compatibility artifact failed.');
+    const retainedArtifact = compileRetainedArtifactForCompatibility(
+      createRetainedGoldenCompilerInput(),
+    ).artifact;
+    if (!retainedArtifact) throw new Error('Frozen compiler 1.1 compatibility artifact failed.');
     const previousArtifact = compilePreviousArtifactForCompatibility(
       createPreviousGoldenCompilerInput(),
     ).artifact;
-    if (!previousArtifact) throw new Error('Frozen compiler 1.1 compatibility artifact failed.');
+    if (!previousArtifact) throw new Error('Frozen compiler 1.2 compatibility artifact failed.');
 
     await Promise.all([
       writeFile(manifestPath, JSON.stringify(input.manifest), 'utf8'),
       writeFile(catalogPath, JSON.stringify({ primitives: input.primitives }), 'utf8'),
       writeFile(membersPath, JSON.stringify(input.activeMembers), 'utf8'),
       writeFile(legacyArtifactPath, canonicalJson(legacyArtifact), 'utf8'),
+      writeFile(retainedArtifactPath, canonicalJson(retainedArtifact), 'utf8'),
       writeFile(previousArtifactPath, canonicalJson(previousArtifact), 'utf8'),
       symlink(cliPath, linkedCliPath),
     ]);
@@ -88,13 +96,19 @@ async function main(): Promise<void> {
     const legacyVerification = JSON.parse(
       runCli(linkedCliPath, ['verify-artifact', '--artifact', legacyArtifactPath]),
     ) as GoldenIdentity & { valid: boolean };
+    const retainedVerification = JSON.parse(
+      runCli(linkedCliPath, ['verify-artifact', '--artifact', retainedArtifactPath]),
+    ) as GoldenIdentity & { valid: boolean };
     const previousVerification = JSON.parse(
       runCli(linkedCliPath, ['verify-artifact', '--artifact', previousArtifactPath]),
     ) as GoldenIdentity & { valid: boolean };
     const golden = JSON.parse(
-      await readFile('packages/compiler/src/fixtures/harbor-city.m9.golden.json', 'utf8'),
+      await readFile('packages/compiler/src/fixtures/harbor-city.m10.golden.json', 'utf8'),
     ) as GoldenIdentity;
     const previousGolden = JSON.parse(
+      await readFile('packages/compiler/src/fixtures/harbor-city.m9.golden.json', 'utf8'),
+    ) as GoldenIdentity;
+    const retainedGolden = JSON.parse(
       await readFile('packages/compiler/src/fixtures/floating-guild-city.m8.golden.json', 'utf8'),
     ) as GoldenIdentity;
     const legacyGolden = JSON.parse(
@@ -124,6 +138,8 @@ async function main(): Promise<void> {
       verification.artifactHash !== golden.artifactHash ||
       previousVerification.valid !== true ||
       previousVerification.artifactHash !== previousGolden.artifactHash ||
+      retainedVerification.valid !== true ||
+      retainedVerification.artifactHash !== retainedGolden.artifactHash ||
       legacyVerification.valid !== true ||
       legacyVerification.artifactHash !== legacyGolden.artifactHash
     ) {
@@ -131,7 +147,7 @@ async function main(): Promise<void> {
     }
 
     console.log(
-      `Offline compiler CLI verified current ${golden.artifactHash}, previous ${previousGolden.artifactHash}, and legacy ${legacyGolden.artifactHash} across separate processes.`,
+      `Offline compiler CLI verified current ${golden.artifactHash}, previous ${previousGolden.artifactHash}, retained ${retainedGolden.artifactHash}, and legacy ${legacyGolden.artifactHash} across separate processes.`,
     );
   } finally {
     await rm(directory, { force: true, recursive: true });

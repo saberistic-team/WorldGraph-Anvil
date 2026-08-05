@@ -9,6 +9,7 @@ const pureModules = [
   'economy-seed.ts',
   'emit.ts',
   'hash.ts',
+  'governance-seed.ts',
   'index.ts',
   'input.ts',
   'invariants.ts',

@@ -6,15 +6,16 @@ Every record must retain: outcome and implementation summary; public contracts a
 
 Canonical records:
 
-- [Milestone 01 — Foundation and deployable shell](./01-foundation-state.md) ([compatibility pointer](./M01-handoff.md))
-- [Milestone 02 — Identity, membership, and authority](./02-identity-authority-state.md) ([compatibility pointer](./M02-handoff.md))
-- [Milestone 03 — Primitive registry and retrieval](./03-primitive-registry-state.md) ([compatibility pointer](./M03-handoff.md))
+- [Milestone 01 — Foundation and deployable shell](./01-foundation-state.md) ([compatibility pointer](./M01-handoff.md)) — complete and sealed
+- [Milestone 02 — Identity, membership, and authority](./02-identity-authority-state.md) ([compatibility pointer](./M02-handoff.md)) — complete and sealed
+- [Milestone 03 — Primitive registry and retrieval](./03-primitive-registry-state.md) ([compatibility pointer](./M03-handoff.md)) — complete and sealed
 - [Milestone 04 — Manifest Studio and deterministic generation](./04-manifest-studio-state.md) ([compatibility pointer](./M04-handoff.md)) — complete and sealed
 - [Milestone 05 — Deterministic compiler and WorldGraph seeding](./05-deterministic-compiler-state.md) ([compatibility pointer](./M05-handoff.md)) — complete and sealed
 - [Milestone 06 — Authoritative command/event ledger, history, and replay](./06-command-event-ledger-state.md) ([compatibility pointer](./M06-handoff.md)) — complete and sealed
 - [Milestone 07 — Deterministic clock and scheduler](./07-deterministic-clock-scheduler-state.md) ([compatibility pointer](./M07-handoff.md)) — complete and sealed
 - [Milestone 08 — Wallets, transfers, and ownership](./08-wallets-transfers-ownership-state.md) ([compatibility pointer](./M08-handoff.md)) — complete and sealed
-- [Milestone 09 — Production, businesses, jobs, markets, treasury, and tax](./09-production-businesses-jobs-markets-tax-state.md) ([blocked compatibility handoff](./M09-handoff.md)) — implemented at source level; runtime and aggregate acceptance gates blocked; **not sealed**
-- Milestones 10–16 — **locked** until Milestone 09 is explicitly sealed.
+- [Milestone 09 — Production, businesses, jobs, markets, treasury, and tax](./09-production-businesses-jobs-markets-tax-state.md) ([compatibility handoff](./M09-handoff.md)) — complete and sealed
+- [Milestone 10 — Governance, laws, proposals, voting, and elections](./10-governance-laws-proposals-voting-elections-state.md) — implementation complete; final acceptance in progress (not sealed)
+- Milestones 11–16 — sequentially locked until each immediately preceding milestone is explicitly sealed.
 
 Do not begin a later milestone while the immediately preceding canonical record is marked incomplete or awaiting acceptance evidence.

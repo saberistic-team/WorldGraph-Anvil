@@ -3,6 +3,7 @@ import type { FastifyInstance, FastifyRequest } from 'fastify';
 
 import {
   CancelWorldCompilationRequestSchema,
+  COMPILED_ARTIFACT_SCHEMA_VERSION,
   CompiledArtifactV1Schema,
   CompiledArtifactV2Schema,
   CompiledArtifactV3Schema,
@@ -52,9 +53,24 @@ function inlineSchema(value: unknown): unknown {
   return value;
 }
 
-// The two exact artifact variants share named nested schemas. Inline copies
+// The exact artifact variants share named nested schemas. Inline copies
 // avoid duplicate JSON Schema identifiers in Fastify's response serializer.
+const CompiledArtifactV4ResponseSchema = Type.Object(
+  {
+    artifactKind: Type.Literal('compiled_world'),
+    artifactSchemaVersion: Type.Literal(COMPILED_ARTIFACT_SCHEMA_VERSION),
+    canonicalBytes: Type.String({ maxLength: 4_194_304, minLength: 2 }),
+    contentHash: Type.String({ maxLength: 64, minLength: 64, pattern: '^[a-f0-9]{64}$' }),
+    inputHash: Type.String({ maxLength: 64, minLength: 64, pattern: '^[a-f0-9]{64}$' }),
+    // The service verifies the exact contract before returning it. Keeping the
+    // already-verified world opaque here avoids Fastify losing the local $defs
+    // scope used by the bounded recursive governance-policy schema.
+    world: Type.Any(),
+  },
+  { additionalProperties: false },
+);
 const CompiledArtifactResponseSchema = Type.Union([
+  CompiledArtifactV4ResponseSchema,
   inlineSchema(CompiledArtifactV3Schema) as typeof CompiledArtifactV3Schema,
   inlineSchema(CompiledArtifactV2Schema) as typeof CompiledArtifactV2Schema,
   inlineSchema(CompiledArtifactV1Schema) as typeof CompiledArtifactV1Schema,

@@ -4,7 +4,7 @@ WorldGraph is an AI-native platform for creating and inhabiting persistent multi
 
 ## Quick start
 
-Prerequisites: Git, Docker Desktop/Engine with Compose, and Node 22.20.0. The repository pins pnpm 11.9.0.
+Prerequisites: Git, Docker Desktop/Engine with Compose, and Node 22.23.2. The repository pins pnpm 11.9.0.
 
 1. Copy .env.example to .env only if you need to override local defaults. Never commit .env.
 2. Run pnpm install --frozen-lockfile.
@@ -12,7 +12,7 @@ Prerequisites: Git, Docker Desktop/Engine with Compose, and Node 22.20.0. The re
 4. Open http://localhost:3000 and http://localhost:3000/system.
 5. Run pnpm reset:local when you want to remove containers and local database data.
 
-The Compose stack builds three non-root Node process roles from one codebase: web, API, and worker. It also starts PostgreSQL 17 with PostGIS/pgvector and Redis. The owner-credential one-shot bootstrap migrates and imports the reviewed primitive catalog before runtime processes start.
+The Compose stack builds separate, pruned, non-root Node 22.23.2 Alpine images for web, API, worker, and the one-shot migration job. Runtime images contain only their service artifact and production dependency closure; the migration job executes compiled JavaScript and does not ship `tsx` or the root development toolchain. PostgreSQL 17 runs on the current PostGIS Alpine line with pgvector 0.8.1 installed, and Redis is pinned to the patched 8.4.5 Alpine image. The upstream PostGIS Alpine image is currently amd64-only, so Compose defaults `POSTGRES_PLATFORM` to `linux/amd64` (including emulation on Apple Silicon). The owner-credential one-shot bootstrap migrates and imports the reviewed primitive catalog before runtime processes start.
 
 ## Verification
 

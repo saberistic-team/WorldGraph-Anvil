@@ -19,6 +19,7 @@
     "@worldgraph/catalog": "workspace:*",
     "@worldgraph/contracts": "workspace:*",
     "@worldgraph/economy": "workspace:*",
+    "@worldgraph/governance": "workspace:*",
     "@worldgraph/manifests": "workspace:*"
   },
   "devDependencies": {

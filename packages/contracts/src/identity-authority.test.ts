@@ -5,6 +5,7 @@ import {
   ApplicationNotificationSchema,
   CommandEnvelopeSchema,
   CreateInvitationRequestSchema,
+  RecentCredentialProofSchema,
   RegisterRequestSchema,
 } from './index.js';
 
@@ -35,6 +36,19 @@ describe('identity and authority contracts', () => {
         schemaVersion: 1,
       }),
     ).toBe(true);
+  });
+
+  it('keeps recent-credential responses opaque and password-free', () => {
+    const proof = createValidator(RecentCredentialProofSchema);
+    expect(
+      proof.is({
+        expiresAt: '2026-07-21T12:05:00.000Z',
+        proofToken: 'opaque-proof-token-with-sufficient-length',
+      }),
+    ).toBe(true);
+    expect(
+      proof.is({ expiresAt: '2026-07-21T12:05:00.000Z', password: 'must-not-be-returned' }),
+    ).toBe(false);
   });
 
   it('runtime-validates each typed application notification payload', () => {

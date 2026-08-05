@@ -679,7 +679,7 @@ async function configureFacility(
        join asset_ownership ownership on ownership.world_id=asset.world_id
         and ownership.asset_id=asset.id
       where asset.world_id=$1 and asset.id=$2 and asset.status='active'
-      for update of asset,ownership`,
+      for update of ownership`,
     [input.command.worldId, payload.facilityAssetId],
   );
   const owned = asset.rows[0];
@@ -2084,7 +2084,7 @@ async function reconcileWorldCommerce(
        live_payroll_checksum,rebuilt_payroll_checksum,live_tax_checksum,rebuilt_tax_checksum,
        live_projection_checksum,rebuilt_journal_checksum,resource_count,inventory_count,
        trade_count,assessment_count,mismatch_count,command_id,event_id,created_at
-     ) values ($1,$2,2,$3::bigint,$4::bigint,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,
+     ) values ($1,$2,3,$3::bigint,$4::bigint,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,
        $16,$17,$18,$19,$20,$21,$22,$23,$24,$25)`,
     [
       runId,
@@ -2653,9 +2653,8 @@ async function activeTaxPolicy(
   const result = await executor.query<TaxPolicyRow>(
     `select id::text,tax_type::text,collection_mode::text,rate_basis_points,
             fixed_amount_minor::text,rounding_mode::text,treasury_wallet_id::text
-       from tax_policies where world_id=$1 and tax_type=$2 and status='active'
-        and effective_from_tick <= $3::bigint
-        and (effective_until_tick is null or effective_until_tick > $3::bigint)
+       from worldgraph_tax_policy_effective_at_v2($1,$2::tax_policy_type,$3::bigint)
+      where status='active'
         and not (id = any($4::uuid[]))
       order by policy_version desc,id limit 1`,
     [worldId, taxType, tick, disabledTaxPolicyIds],
@@ -2673,11 +2672,16 @@ async function activeMarketTaxPolicy(
   const result = await executor.query<TaxPolicyRow>(
     `select id::text,tax_type::text,collection_mode::text,rate_basis_points,
             fixed_amount_minor::text,rounding_mode::text,treasury_wallet_id::text
-      from tax_policies where world_id=$1 and tax_type in ('sales','transaction')
-        and status='active' and effective_from_tick <= $2::bigint
-        and (effective_until_tick is null or effective_until_tick > $2::bigint)
+      from (
+        select policy.*,0 as tax_priority
+          from worldgraph_tax_policy_effective_at_v2($1,'sales',$2::bigint) policy
+        union all
+        select policy.*,1 as tax_priority
+          from worldgraph_tax_policy_effective_at_v2($1,'transaction',$2::bigint) policy
+      ) policy
+      where status='active'
         and not (id = any($3::uuid[]))
-      order by case tax_type when 'sales' then 0 else 1 end,policy_version desc,id
+      order by tax_priority,policy_version desc,id
       limit 1`,
     [worldId, tick, disabledTaxPolicyIds],
   );

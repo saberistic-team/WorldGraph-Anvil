@@ -44,6 +44,10 @@ import { PostgresEconomyQueryRepository } from './economy/repository.js';
 import { EconomyQueryService } from './economy/service.js';
 import { PostgresCommerceReadRepository } from './economy/commerce-read-repository.js';
 import { CommerceReadService } from './economy/commerce-read-service.js';
+import { PostgresGovernanceReadRepository } from './governance/repository.js';
+import { GovernanceReadService } from './governance/service.js';
+import { PostgresGovernanceCommandGateway } from './governance/command-gateway.js';
+import { GovernanceCapabilityService } from './governance/capabilities.js';
 
 const config = loadRuntimeConfig();
 if (!config.authPepper) throw new Error('API authentication configuration is unavailable.');
@@ -59,9 +63,16 @@ const telemetryRuntime = await initializeTelemetry({
   logger,
   service: 'worldgraph-api',
 });
-const database = createDatabaseClient(config.databaseUrl, 'worldgraph-api');
-database.pool.on('error', (error) => {
-  logger.error({ error }, 'database.idle_client_error');
+const database = createDatabaseClient(config.databaseUrl, 'worldgraph-api', {
+  onCheckedOutClientError: () => {
+    logger.error(
+      { code: 'DATABASE_CHECKED_OUT_CLIENT_ERROR' },
+      'database.checked_out_client_error',
+    );
+  },
+  onIdleClientError: () => {
+    logger.error({ code: 'DATABASE_IDLE_CLIENT_ERROR' }, 'database.idle_client_error');
+  },
 });
 const redis = new Redis(config.redisUrl, {
   connectTimeout: config.dependencyTimeoutMs,
@@ -143,6 +154,22 @@ const compilation = new CompilationService(
   identityConfig.authPepper,
 );
 const commandRepository = new PostgresCommandRepository(database.pool, idGenerator);
+const governanceCommands = new PostgresGovernanceCommandGateway(database.pool, {
+  ids: idGenerator,
+  secretHashKey: identityConfig.authPepper,
+  policy: {
+    allowEnactment: config.governanceEnactmentEnabled ?? true,
+    allowNewContests: config.governanceContestsEnabled ?? true,
+    allowOverrides: config.governanceOverridesEnabled ?? true,
+    allowVoting: config.governanceVotingEnabled ?? true,
+    contestRateLimitPerHour: config.governanceContestRateLimitPerHour ?? 6,
+    nominationRateLimitPerMinute: config.governanceNominationRateLimitPerMinute ?? 10,
+    requireTwoPersonOverride: config.governanceTwoPersonControlEnabled ?? false,
+    requireTwoPersonRepair: config.governanceTwoPersonControlEnabled ?? false,
+    sponsorRateLimitPerMinute: config.governanceSponsorRateLimitPerMinute ?? 20,
+    voteRateLimitPerMinute: config.governanceVoteRateLimitPerMinute ?? 30,
+  },
+});
 const commands = new WorldCommandService(
   new WorldCommandBus(
     commandRepository,
@@ -168,6 +195,7 @@ const commands = new WorldCommandService(
       purchasesEnabled: config.economyPurchasesEnabled ?? true,
       workRateLimitPerMinute: config.economyWorkRateLimitPerMinute ?? 10,
     },
+    governanceCommands,
   ),
   commandRepository,
   clock,
@@ -189,6 +217,12 @@ const commerceReads = new CommerceReadService(
   identityConfig.authPepper,
   config.economyDisabledTaxPolicyIds ?? [],
 );
+const governanceRepository = new PostgresGovernanceReadRepository(database.pool);
+const governance = new GovernanceReadService(
+  governanceRepository,
+  identityConfig.authPepper,
+  new GovernanceCapabilityService(governanceRepository, governanceCommands),
+);
 const primitives = new PrimitiveService(
   primitiveRepository,
   clock,
@@ -209,6 +243,7 @@ const app = await buildApp({
     commerceReads,
     compilation,
     economy,
+    governance,
     identity,
     manifests,
     primitives,

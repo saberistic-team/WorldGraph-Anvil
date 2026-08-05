@@ -34,6 +34,11 @@ export const CommerceCodeSchema = Type.String({
   minLength: 1,
   pattern: '^[a-z][a-z0-9_]*$',
 });
+export const CommerceFailureCodeSchema = Type.String({
+  maxLength: 100,
+  minLength: 3,
+  pattern: '^[A-Z][A-Z0-9_]*$',
+});
 export const CommerceDisplayNameSchema = Type.String({
   maxLength: 100,
   minLength: 1,
@@ -832,7 +837,7 @@ export const PayrollFailedPayloadV1Schema = Type.Object(
   {
     ...CommerceEventBase,
     contractId: EconomyUuidSchema,
-    errorCode: CommerceCodeSchema,
+    errorCode: CommerceFailureCodeSchema,
     payrollRecordId: EconomyUuidSchema,
   },
   { additionalProperties: false },
@@ -858,7 +863,7 @@ export const ProductionResourcesPayloadV1Schema = Type.Object(
 export const ProductionFailedPayloadV1Schema = Type.Object(
   {
     ...CommerceEventBase,
-    errorCode: CommerceCodeSchema,
+    errorCode: CommerceFailureCodeSchema,
     productionRunId: EconomyUuidSchema,
   },
   { additionalProperties: false },

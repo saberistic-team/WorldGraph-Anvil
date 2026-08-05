@@ -5,10 +5,12 @@ import {
   runLiveCommerceBrowserDemo,
   runLiveCommerceBrowserEvidenceReview,
 } from './compose-commerce-browser-smoke.mjs';
+import { runLiveGovernanceBrowserDemo } from './compose-governance-browser-smoke.mjs';
 
 const api = 'http://127.0.0.1:4000';
-const web = 'http://127.0.0.1:3000';
-const browserOrigin = 'http://localhost:3000';
+const webPort = process.env.WEB_PORT ?? '3000';
+const web = `http://127.0.0.1:${webPort}`;
+const browserOrigin = `http://localhost:${webPort}`;
 const operationsToken = process.env.OPERATIONS_TOKEN;
 const commerceBrowserSmokeEnabled = process.env.COMPOSE_SMOKE_BROWSER === 'true';
 
@@ -58,6 +60,23 @@ async function browserRequest(jar, path, options = {}) {
   return { body, response };
 }
 
+async function rateLimitedRead(jar, path, timeoutMs = 90_000) {
+  const deadline = Date.now() + timeoutMs;
+  let result;
+  do {
+    result = await browserRequest(jar, path);
+    if (result.response.status !== 429 || result.body?.error?.code !== 'RATE_LIMITED') {
+      return result;
+    }
+    const retryAfterSeconds = Number(result.response.headers.get('retry-after'));
+    const retryAfterMs = Number.isFinite(retryAfterSeconds)
+      ? Math.min(60_000, Math.max(500, Math.ceil(retryAfterSeconds * 1_000) + 250))
+      : 5_000;
+    await new Promise((resolve) => setTimeout(resolve, retryAfterMs));
+  } while (Date.now() < deadline);
+  return result;
+}
+
 async function mutation(jar, path, method, body, idempotencyKey) {
   const csrf = jar.get('wg_csrf');
   if (!csrf) throw new Error('The browser cookie jar did not contain a CSRF token.');
@@ -71,10 +90,36 @@ async function mutation(jar, path, method, body, idempotencyKey) {
   });
 }
 
+async function commandMutation(jar, worldId, command, timeoutMs = 90_000) {
+  const deadline = Date.now() + timeoutMs;
+  let result;
+  do {
+    result = await mutation(
+      jar,
+      `/worlds/${worldId}/commands`,
+      'POST',
+      command,
+      command.idempotencyKey,
+    );
+    if (result.response.status !== 429 || result.body?.error?.code !== 'RATE_LIMITED') {
+      return result;
+    }
+    const retryAfterSeconds = Number(result.response.headers.get('retry-after'));
+    const retryAfterMs = Number.isFinite(retryAfterSeconds)
+      ? Math.min(60_000, Math.max(500, Math.ceil(retryAfterSeconds * 1_000) + 250))
+      : 5_000;
+    await new Promise((resolve) => setTimeout(resolve, retryAfterMs));
+  } while (Date.now() < deadline);
+  return result;
+}
+
 function expectStatus(result, status, operation) {
   if (result.response.status === status) return result.body;
   const code = result.body?.error?.code ?? 'UNKNOWN_ERROR';
-  throw new Error(`${operation} returned ${result.response.status} (${code}); expected ${status}.`);
+  const message = result.body?.error?.message ?? 'No public error message was returned.';
+  throw new Error(
+    `${operation} returned ${result.response.status} (${code}); expected ${status}: ${message}`,
+  );
 }
 
 function canonicalizeJson(input, ancestors = new Set()) {
@@ -127,6 +172,16 @@ function canonicalJson(input) {
       .join(',')}}`;
   }
   return serialize(value);
+}
+
+function memberPrincipalKey(worldId, userId) {
+  const digest = createHash('sha256')
+    .update(
+      `worldgraph-member-principal-v1\0${worldId.toLowerCase()}\0${userId.toLowerCase()}`,
+      'utf8',
+    )
+    .digest('hex');
+  return `member-${digest.slice(0, 32)}`;
 }
 
 function expectExactKeys(value, expectedKeys, label) {
@@ -196,7 +251,7 @@ function assertExactEconomySeedPlan(plan) {
   );
   if (
     plan.economySeedPlanSchemaVersion !== 2 ||
-    plan.initialSupplyMinor !== '20000' ||
+    plan.initialSupplyMinor !== '30000' ||
     plan.currency.cashOutAllowed !== false ||
     plan.currency.code !== 'GCR' ||
     plan.currency.currencySchemaVersion !== 1 ||
@@ -209,8 +264,8 @@ function assertExactEconomySeedPlan(plan) {
   ) {
     throw new Error(`Economy seed currency was not exact: ${JSON.stringify(plan.currency)}.`);
   }
-  if (!Array.isArray(plan.wallets) || plan.wallets.length !== 5) {
-    throw new Error('Economy seed plan did not contain exactly five wallets.');
+  if (!Array.isArray(plan.wallets) || plan.wallets.length !== 6) {
+    throw new Error('Economy seed plan did not contain exactly six wallets.');
   }
   for (const wallet of plan.wallets) {
     expectExactKeys(
@@ -240,7 +295,7 @@ function assertExactEconomySeedPlan(plan) {
   const treasuryWallet = treasuryWallets[0];
   if (
     treasuryWallets.length !== 1 ||
-    playerWallets.length !== 2 ||
+    playerWallets.length !== 3 ||
     organizationWallets.length !== 2 ||
     treasuryWallet?.initialBalanceMinor !== '0' ||
     treasuryWallet.ownerEntityLogicalKey !== plan.currency.issuerEntityLogicalKey ||
@@ -264,8 +319,8 @@ function assertExactEconomySeedPlan(plan) {
         ['0', 'organization:artisan-guild', 'wallet:organization:artisan-guild:gcr', 1],
         ['0', 'organization:energy-guild', 'wallet:organization:energy-guild:gcr', 1],
       ]) ||
-    new Set(plan.wallets.map((wallet) => wallet.ownerEntityLogicalKey)).size !== 5 ||
-    plan.wallets.reduce((sum, wallet) => sum + BigInt(wallet.initialBalanceMinor), 0n) !== 20000n
+    new Set(plan.wallets.map((wallet) => wallet.ownerEntityLogicalKey)).size !== 6 ||
+    plan.wallets.reduce((sum, wallet) => sum + BigInt(wallet.initialBalanceMinor), 0n) !== 30000n
   ) {
     throw new Error(
       `Economy seed wallet distribution was not exact: ${JSON.stringify(plan.wallets)}.`,
@@ -430,8 +485,8 @@ function assertExactEconomySeedPlan(plan) {
   }
 
   if (
-    JSON.stringify(plan.businesses) !==
-      JSON.stringify([
+    canonicalJson(plan.businesses) !==
+      canonicalJson([
         {
           businessSchemaVersion: 1,
           displayName: 'Energy Harbor Works',
@@ -441,8 +496,8 @@ function assertExactEconomySeedPlan(plan) {
           walletStableKey: 'wallet:organization:energy-guild:gcr',
         },
       ]) ||
-    JSON.stringify(plan.facilities) !==
-      JSON.stringify([
+    canonicalJson(plan.facilities) !==
+      canonicalJson([
         {
           assetStableKey: 'asset:facility:energy-harbor-workshop',
           businessStableKey: 'business:energy-guild',
@@ -452,8 +507,8 @@ function assertExactEconomySeedPlan(plan) {
           status: 'active',
         },
       ]) ||
-    JSON.stringify(plan.employmentOffers) !==
-      JSON.stringify([
+    canonicalJson(plan.employmentOffers) !==
+      canonicalJson([
         {
           businessStableKey: 'business:energy-guild',
           cadenceTicks: '12',
@@ -495,8 +550,8 @@ function assertExactEconomySeedPlan(plan) {
         policy.taxPolicySchemaVersion !== 1 ||
         policy.treasuryWalletStableKey !== 'wallet:treasury:gcr',
     ) ||
-    JSON.stringify(plan.treasury) !==
-      JSON.stringify({
+    canonicalJson(plan.treasury) !==
+      canonicalJson({
         currencyStableKey: 'currency:gcr',
         institutionEntityLogicalKey: 'institution:guild-council',
         treasuryBindingSchemaVersion: 1,
@@ -528,8 +583,9 @@ async function waitFor(path, expectedStatus, timeoutMs = 60_000) {
 async function verifyOperationalWorker(stage) {
   if (!operationsToken) return;
   const key = `compose-${stage}-${Date.now()}`;
+  const deadline = Date.now() + 180_000;
   let lastStatus = 'not-requested';
-  for (let attempt = 0; attempt < 20; attempt += 1) {
+  while (Date.now() < deadline) {
     const response = await fetch(`${api}/api/v1/system/smoke-jobs`, {
       body: '{}',
       headers: {
@@ -540,12 +596,20 @@ async function verifyOperationalWorker(stage) {
       method: 'POST',
     });
     const result = await response.json();
+    if (response.status === 429 && result?.error?.code === 'RATE_LIMITED') {
+      const retryAfterSeconds = Number(response.headers.get('retry-after'));
+      const retryAfterMs = Number.isFinite(retryAfterSeconds)
+        ? Math.min(60_000, Math.max(500, Math.ceil(retryAfterSeconds * 1_000) + 250))
+        : 5_000;
+      await new Promise((resolve) => setTimeout(resolve, retryAfterMs));
+      continue;
+    }
     if (response.status !== 202) {
       throw new Error(`${stage} smoke enqueue failed: ${JSON.stringify(result)}`);
     }
     lastStatus = result.status;
     if (result.status === 'completed') return;
-    await new Promise((resolve) => setTimeout(resolve, 500));
+    await new Promise((resolve) => setTimeout(resolve, 15_000));
   }
   throw new Error(`${stage} worker smoke did not complete; last status ${lastStatus}.`);
 }
@@ -598,11 +662,7 @@ function economyCommand(summary, type, payload, idempotencyKey) {
 }
 
 async function submitEconomyCommand(jar, worldId, command) {
-  const result = expectStatus(
-    await mutation(jar, `/worlds/${worldId}/commands`, 'POST', command, command.idempotencyKey),
-    200,
-    command.type,
-  );
+  const result = expectStatus(await commandMutation(jar, worldId, command), 200, command.type);
   if (result.status !== 'accepted') {
     throw new Error(`${command.type} was not accepted: ${JSON.stringify(result)}.`);
   }
@@ -673,11 +733,7 @@ async function readSimulationClock(jar, worldId) {
 }
 
 async function submitSimulationCommand(jar, worldId, command) {
-  return expectStatus(
-    await mutation(jar, `/worlds/${worldId}/commands`, 'POST', command, command.idempotencyKey),
-    200,
-    command.type,
-  );
+  return expectStatus(await commandMutation(jar, worldId, command), 200, command.type);
 }
 
 function simulationCommand(clockView, type, payload, idempotencyKey, expectedAggregateVersion) {
@@ -818,13 +874,177 @@ async function advanceSimulationTo(jar, worldId, targetTick, idempotencyKey) {
   return advanced;
 }
 
+function governanceCommand(clockView, type, payload, expectedAggregateVersion, idempotencyKey) {
+  return {
+    commandId: randomUUID(),
+    expectedAggregateVersion,
+    expectedStateRevision: clockView.stateRevision,
+    expectedTick: clockView.clock.currentTick,
+    expectedWorldVersion: clockView.designVersion,
+    idempotencyKey,
+    payload,
+    schemaVersion: 1,
+    type,
+  };
+}
+
+async function submitGovernanceCommand(jar, worldId, command) {
+  const result = expectStatus(await commandMutation(jar, worldId, command), 200, command.type);
+  if (result.status !== 'accepted') {
+    throw new Error(`${command.type} was not accepted: ${JSON.stringify(result)}.`);
+  }
+  return result;
+}
+
+async function readGovernancePage(jar, worldId, path, label) {
+  const page = expectStatus(
+    await rateLimitedRead(jar, `/worlds/${worldId}/governance/${path}`),
+    200,
+    label,
+  );
+  if (page.page?.nextCursor !== null || !/^\d+$/u.test(page.page?.projectionRevision ?? '')) {
+    throw new Error(`${label} did not return one complete projection-bounded page.`);
+  }
+  return page;
+}
+
+async function waitForGovernanceItem(jar, worldId, path, label, predicate, timeoutMs = 30_000) {
+  const deadline = Date.now() + timeoutMs;
+  let page;
+  while (Date.now() < deadline) {
+    page = await readGovernancePage(jar, worldId, path, label);
+    const item = page.items.find(predicate);
+    if (item) return item;
+    await new Promise((resolve) => setTimeout(resolve, 250));
+  }
+  throw new Error(`${label} did not reach its expected state: ${JSON.stringify(page)}.`);
+}
+
+async function enactPublicGovernanceProposal(input) {
+  const clock = await readSimulationClock(input.proposer, input.worldId);
+  const sponsorshipEndsAtTick = (
+    BigInt(clock.clock.currentTick) + BigInt(input.charter.proposalRules.sponsorshipTicks)
+  ).toString();
+  const debateEndsAtTick = (
+    BigInt(sponsorshipEndsAtTick) + BigInt(input.charter.proposalRules.debateTicks)
+  ).toString();
+  const votingOpensAtTick = debateEndsAtTick;
+  const votingClosesAtTick = (
+    BigInt(votingOpensAtTick) + BigInt(input.charter.proposalRules.votingTicks)
+  ).toString();
+  const action = input.action(votingClosesAtTick);
+  await submitGovernanceCommand(
+    input.proposer,
+    input.worldId,
+    governanceCommand(
+      clock,
+      'CreateProposalV1',
+      {
+        action,
+        approvalThresholdBps: input.charter.proposalRules.approvalThresholdBps,
+        ballotPolicy: input.charter.proposalRules.ballotPolicy,
+        body: input.body,
+        debateEndsAtTick,
+        institutionId: input.institution.institutionId,
+        jurisdictionEntityKey: input.institution.jurisdictionEntityKey,
+        minimumSponsors: input.charter.proposalRules.minimumSponsors,
+        proposalKey: input.proposalKey,
+        quorumBps: input.charter.proposalRules.quorumBps,
+        sponsorshipEndsAtTick,
+        targetCharterVersion: input.charter.version,
+        title: input.title,
+        votingClosesAtTick,
+        votingOpensAtTick,
+      },
+      '0',
+      `${input.idempotencyPrefix}-create`,
+    ),
+  );
+  const debating = await waitForGovernanceItem(
+    input.proposer,
+    input.worldId,
+    'proposals?limit=100',
+    `read ${input.title} debate`,
+    (proposal) => proposal.title === input.title && proposal.status === 'debate',
+  );
+  await advanceSimulationTo(
+    input.proposer,
+    input.worldId,
+    votingOpensAtTick,
+    `${input.idempotencyPrefix}-open`,
+  );
+  const opened = await waitForGovernanceItem(
+    input.proposer,
+    input.worldId,
+    'proposals?limit=100',
+    `open ${input.title} voting`,
+    (proposal) => proposal.proposalId === debating.proposalId && proposal.status === 'open',
+  );
+  if (!opened.eligibilitySnapshotId || opened.eligibleCount !== input.voters.length) {
+    throw new Error(`${input.title} did not freeze the exact three-account eligibility set.`);
+  }
+  for (const [index, voter] of input.voters.entries()) {
+    const voterClock = await readSimulationClock(voter, input.worldId);
+    await submitGovernanceCommand(
+      voter,
+      input.worldId,
+      governanceCommand(
+        voterClock,
+        'CastProposalBallotV1',
+        {
+          choice: 'yes',
+          eligibilitySnapshotId: opened.eligibilitySnapshotId,
+          expectedProposalVersion: opened.aggregateVersion,
+          proposalId: opened.proposalId,
+          replaceExisting: false,
+        },
+        opened.aggregateVersion,
+        `${input.idempotencyPrefix}-vote-${index + 1}`,
+      ),
+    );
+  }
+  await advanceSimulationTo(
+    input.proposer,
+    input.worldId,
+    votingClosesAtTick,
+    `${input.idempotencyPrefix}-close`,
+  );
+  const enacted = await waitForGovernanceItem(
+    input.proposer,
+    input.worldId,
+    'proposals?limit=100',
+    `enact ${input.title}`,
+    (proposal) => proposal.proposalId === opened.proposalId && proposal.status === 'enacted',
+  );
+  const result = expectStatus(
+    await browserRequest(
+      input.proposer,
+      `/worlds/${input.worldId}/governance/proposals/${opened.proposalId}/result`,
+    ),
+    200,
+    `read ${input.title} result`,
+  );
+  if (
+    enacted.turnoutCount !== input.voters.length ||
+    result.certified !== true ||
+    result.outcome !== 'passed' ||
+    result.yesCount !== input.voters.length ||
+    result.noCount !== 0
+  ) {
+    throw new Error(
+      `${input.title} did not produce one exact certified enactment: ${JSON.stringify({ enacted, result })}.`,
+    );
+  }
+  return { action, proposal: enacted, result, votingClosesAtTick };
+}
+
 await waitFor(`${api}/health/ready`, 200);
 await waitFor(`${web}/health/live`, 200);
 const info = await (await fetch(`${api}/api/v1/system/info`)).json();
 if (
   info.codename !== 'Anvil' ||
-  info.versions.contracts !== 9 ||
-  info.versions.runtimeSchema !== 9 ||
+  info.versions.contracts !== 10 ||
+  info.versions.runtimeSchema !== 10 ||
   info.versions.authoritativeCommandSchema !== 1 ||
   info.versions.domainEventSchema !== 1 ||
   info.versions.ledgerSchema !== 1 ||
@@ -833,9 +1053,9 @@ if (
   info.versions.historySchema !== 1 ||
   info.versions.manifestSchema !== 1 ||
   info.versions.primitiveSchema !== 1 ||
-  info.versions.compiler !== '1.2.0' ||
+  info.versions.compiler !== '1.3.0' ||
   info.versions.compilerConfigSchema !== 1 ||
-  info.versions.compilerArtifactSchema !== 3 ||
+  info.versions.compilerArtifactSchema !== 4 ||
   info.versions.worldGraphSchema !== 1 ||
   info.versions.compilationQueueSchema !== 1 ||
   info.versions.simulationBatchSchema !== 1 ||
@@ -845,7 +1065,7 @@ if (
   info.versions.simulationPrngAlgorithm !== 'xorshift32-sha256-v1' ||
   info.versions.simulationPrngSchema !== 1 ||
   info.versions.simulationProcessSchema !== 1 ||
-  info.versions.simulationProcessRegistry !== 2 ||
+  info.versions.simulationProcessRegistry !== 3 ||
   info.versions.simulationProjectionSchema !== 1 ||
   info.versions.simulationQueueSchema !== 1 ||
   info.versions.simulationScheduleSchema !== 1 ||
@@ -857,7 +1077,7 @@ if (
   info.versions.assetSchema !== 1 ||
   info.versions.ownershipSchema !== 1 ||
   info.versions.assetTransferOfferSchema !== 1 ||
-  info.versions.economyReconciliationSchema !== 2 ||
+  info.versions.economyReconciliationSchema !== 3 ||
   info.versions.resourceTypeSchema !== 1 ||
   info.versions.productionRecipeSchema !== 1 ||
   info.versions.productionRecipeVersionSchema !== 1 ||
@@ -874,7 +1094,10 @@ if (
   info.versions.marketTradeSchema !== 1 ||
   info.versions.taxPolicySchema !== 1 ||
   info.versions.taxAssessmentSchema !== 1 ||
-  info.versions.economyExpansionHeadSchema !== 1
+  info.versions.economyExpansionHeadSchema !== 1 ||
+  info.versions.governanceSchema !== 1 ||
+  info.versions.governancePolicySchema !== 1 ||
+  info.versions.governanceSeedPlanSchema !== 1
 ) {
   throw new Error('System info did not match the public compatibility contract.');
 }
@@ -883,6 +1106,7 @@ const run = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10
 const password = 'Compose verification password! 2026';
 const alice = new CookieJar();
 const bob = new CookieJar();
+const cora = new CookieJar();
 const observer = new CookieJar();
 const aliceRegistration = await browserRequest(alice, '/auth/register', {
   body: { displayName: 'Compose Alice', email: `alice-${run}@example.test`, password },
@@ -908,6 +1132,14 @@ expectStatus(
   }),
   201,
   'register Bob',
+);
+expectStatus(
+  await browserRequest(cora, '/auth/register', {
+    body: { displayName: 'Compose Cora', email: `cora-${run}@example.test`, password },
+    method: 'POST',
+  }),
+  201,
+  'register Cora',
 );
 expectStatus(
   await browserRequest(observer, '/auth/register', {
@@ -945,12 +1177,12 @@ const importedHarborPrimitiveKeys = primitivePage.items
   .map((item) => item.key)
   .sort();
 if (
-  primitivePage.items.length !== 19 ||
+  primitivePage.items.length !== 20 ||
   primitivePage.nextCursor !== null ||
   JSON.stringify(importedHarborPrimitiveKeys) !== JSON.stringify(harborPrimitiveKeys)
 ) {
   throw new Error(
-    'The exact 16-entry starter catalog plus three reviewed Harbor additions was not imported once.',
+    'The exact starter, Harbor economy, and governance catalogs were not imported once.',
   );
 }
 const governmentPage = expectStatus(
@@ -1060,6 +1292,28 @@ expectStatus(
   200,
   'accept Bob invitation',
 );
+const coraInvitation = expectStatus(
+  await mutation(
+    alice,
+    `/worlds/${worldId}/invitations`,
+    'POST',
+    { email: `cora-${run}@example.test`, expiresIn: 3600, role: 'player' },
+    `invite-cora-${run}`,
+  ),
+  201,
+  'invite Cora',
+);
+expectStatus(
+  await mutation(
+    cora,
+    '/invitations/accept',
+    'POST',
+    { rawToken: coraInvitation.rawToken },
+    `accept-cora-${run}`,
+  ),
+  200,
+  'accept Cora invitation',
+);
 expectStatus(
   await mutation(
     bob,
@@ -1077,7 +1331,11 @@ const membershipPage = expectStatus(
   200,
   'list memberships',
 );
+const aliceId = expectStatus(await browserRequest(alice, '/auth/me'), 200, 'read Alice session')
+  .user.id;
 const bobId = expectStatus(await browserRequest(bob, '/auth/me'), 200, 'read Bob session').user.id;
+const coraId = expectStatus(await browserRequest(cora, '/auth/me'), 200, 'read Cora session').user
+  .id;
 const bobMembership = membershipPage.items.find((item) => item.user.id === bobId);
 if (!bobMembership) throw new Error('Bob membership was not visible to the creator.');
 const promoted = expectStatus(
@@ -1318,7 +1576,7 @@ if (
   compilationRun.status !== 'succeeded' ||
   compilationRun.stage !== 'activated' ||
   !compilationRun.artifactHash ||
-  compilationRun.compilerVersion !== '1.2.0' ||
+  compilationRun.compilerVersion !== '1.3.0' ||
   compilationRun.compilerConfigVersion !== 1
 ) {
   throw new Error(`World compilation did not activate exactly: ${JSON.stringify(compilationRun)}`);
@@ -1330,11 +1588,11 @@ const runtimeSummary = expectStatus(
 );
 if (
   runtimeSummary.artifactHash !== compilationRun.artifactHash ||
-  runtimeSummary.compilerVersion !== '1.2.0' ||
+  runtimeSummary.compilerVersion !== '1.3.0' ||
   runtimeSummary.compilerConfigVersion !== 1 ||
   runtimeSummary.entityCount < 35 ||
   runtimeSummary.relationshipCount < 40 ||
-  runtimeSummary.controllerCount !== 2 ||
+  runtimeSummary.controllerCount !== 3 ||
   runtimeSummary.stateRevision !== 2 ||
   runtimeSummary.lastLedgerSequence !== 2
 ) {
@@ -1363,6 +1621,8 @@ expectExactKeys(
     'economySeedPlan',
     'economySeedPlanHash',
     'entities',
+    'governanceSeedPlan',
+    'governanceSeedPlanHash',
     'inputHash',
     'manifestContentHash',
     'manifestSchemaVersion',
@@ -1372,7 +1632,7 @@ expectExactKeys(
     'visualPlan',
     'worldGraphSchemaVersion',
   ],
-  'Compiled world V3',
+  'Compiled world V4',
 );
 const parsedCanonicalWorld = JSON.parse(compiledArtifact.canonicalBytes);
 const computedArtifactHash = createHash('sha256')
@@ -1383,9 +1643,28 @@ const seedShape = assertExactEconomySeedPlan(seedPlan);
 const computedSeedPlanHash = createHash('sha256')
   .update(canonicalJson({ domain: 'worldgraph.economy-seed-plan.v2', plan: seedPlan }), 'utf8')
   .digest('hex');
+const governanceSeedPlan = compiledArtifact.world.governanceSeedPlan;
+const computedGovernanceSeedPlanHash = createHash('sha256')
+  .update(
+    canonicalJson({
+      domain: 'worldgraph.governance-seed-plan.v1',
+      value: governanceSeedPlan,
+    }),
+    'utf8',
+  )
+  .digest('hex');
 const controllerEntityKeys = compiledArtifact.world.controllers
   .map((controller) => controller.entityLogicalKey)
   .sort();
+const aliceController = compiledArtifact.world.controllers.find(
+  (controller) => controller.principalKey === memberPrincipalKey(worldId, aliceId),
+);
+const bobController = compiledArtifact.world.controllers.find(
+  (controller) => controller.principalKey === memberPrincipalKey(worldId, bobId),
+);
+const coraController = compiledArtifact.world.controllers.find(
+  (controller) => controller.principalKey === memberPrincipalKey(worldId, coraId),
+);
 const playerWalletOwnerKeys = seedShape.playerWallets
   .map((wallet) => wallet.ownerEntityLogicalKey)
   .sort();
@@ -1394,9 +1673,9 @@ const creatorCharacters = compiledArtifact.world.entities.filter(
 );
 if (
   compiledArtifact.artifactKind !== 'compiled_world' ||
-  compiledArtifact.artifactSchemaVersion !== 3 ||
-  compiledArtifact.world.artifactSchemaVersion !== 3 ||
-  compiledArtifact.world.compilerVersion !== '1.2.0' ||
+  compiledArtifact.artifactSchemaVersion !== 4 ||
+  compiledArtifact.world.artifactSchemaVersion !== 4 ||
+  compiledArtifact.world.compilerVersion !== '1.3.0' ||
   compiledArtifact.world.compilerConfigVersion !== 1 ||
   compiledArtifact.inputHash !== compiledArtifact.world.inputHash ||
   compiledArtifact.canonicalBytes !== canonicalJson(parsedCanonicalWorld) ||
@@ -1405,21 +1684,88 @@ if (
   compiledArtifact.contentHash !== compilationRun.artifactHash ||
   !/^[a-f0-9]{64}$/u.test(compiledArtifact.world.economySeedPlanHash) ||
   computedSeedPlanHash !== compiledArtifact.world.economySeedPlanHash ||
+  governanceSeedPlan?.governanceSeedPlanSchemaVersion !== 1 ||
+  !/^[a-f0-9]{64}$/u.test(compiledArtifact.world.governanceSeedPlanHash) ||
+  computedGovernanceSeedPlanHash !== compiledArtifact.world.governanceSeedPlanHash ||
   runtimeSummary.entityCount !== compiledArtifact.world.counts.entities ||
   runtimeSummary.relationshipCount !== compiledArtifact.world.counts.relationships ||
   runtimeSummary.controllerCount !== compiledArtifact.world.counts.controllers ||
   compiledArtifact.world.entities.length !== compiledArtifact.world.counts.entities ||
   compiledArtifact.world.relationships.length !== compiledArtifact.world.counts.relationships ||
   compiledArtifact.world.controllers.length !== compiledArtifact.world.counts.controllers ||
+  !aliceController ||
+  !bobController ||
+  !coraController ||
+  new Set([
+    aliceController.entityLogicalKey,
+    bobController.entityLogicalKey,
+    coraController.entityLogicalKey,
+  ]).size !== 3 ||
   JSON.stringify(controllerEntityKeys) !== JSON.stringify(playerWalletOwnerKeys) ||
   creatorCharacters.length !== 1 ||
   creatorCharacters[0].logicalKey !== seedShape.asset.initialOwnerEntityLogicalKey ||
+  compiledArtifact.canonicalBytes.includes(aliceId) ||
+  compiledArtifact.canonicalBytes.includes(bobId) ||
+  compiledArtifact.canonicalBytes.includes(coraId) ||
   compiledArtifact.canonicalBytes.includes(`alice-${run}@example.test`) ||
   compiledArtifact.canonicalBytes.includes(`bob-${run}@example.test`) ||
+  compiledArtifact.canonicalBytes.includes(`cora-${run}@example.test`) ||
   compiledArtifact.canonicalBytes.includes(manifestPrompt)
 ) {
   throw new Error(
-    'Compiled V3 artifact, economy seed plan, graph counts, or privacy boundary failed.',
+    `Compiled V4 artifact, economy/governance seed plans, graph counts, or privacy boundary failed: ${JSON.stringify(
+      {
+        artifactHash: {
+          computed: computedArtifactHash,
+          run: compilationRun.artifactHash,
+          wrapper: compiledArtifact.contentHash,
+        },
+        artifactKind: compiledArtifact.artifactKind,
+        artifactSchemaVersion: compiledArtifact.artifactSchemaVersion,
+        canonicalBytesMatchParsed:
+          compiledArtifact.canonicalBytes === canonicalJson(parsedCanonicalWorld),
+        controllersFound: {
+          alice: Boolean(aliceController),
+          bob: Boolean(bobController),
+          cora: Boolean(coraController),
+        },
+        controllerEntityKeys,
+        creatorCharacterKeys: creatorCharacters.map((entity) => entity.logicalKey),
+        economySeedPlanHash: {
+          computed: computedSeedPlanHash,
+          world: compiledArtifact.world.economySeedPlanHash,
+        },
+        foundingAssetOwner: seedShape.asset.initialOwnerEntityLogicalKey,
+        governanceSeedPlanHash: {
+          computed: computedGovernanceSeedPlanHash,
+          world: compiledArtifact.world.governanceSeedPlanHash,
+        },
+        inputHashMatches: compiledArtifact.inputHash === compiledArtifact.world.inputHash,
+        playerWalletOwnerKeys,
+        privacyLeakDetected:
+          compiledArtifact.canonicalBytes.includes(aliceId) ||
+          compiledArtifact.canonicalBytes.includes(bobId) ||
+          compiledArtifact.canonicalBytes.includes(coraId) ||
+          compiledArtifact.canonicalBytes.includes(`alice-${run}@example.test`) ||
+          compiledArtifact.canonicalBytes.includes(`bob-${run}@example.test`) ||
+          compiledArtifact.canonicalBytes.includes(`cora-${run}@example.test`) ||
+          compiledArtifact.canonicalBytes.includes(manifestPrompt),
+        runtimeCounts: {
+          controllers: runtimeSummary.controllerCount,
+          entities: runtimeSummary.entityCount,
+          relationships: runtimeSummary.relationshipCount,
+        },
+        worldCounts: compiledArtifact.world.counts,
+        worldLengths: {
+          controllers: compiledArtifact.world.controllers.length,
+          entities: compiledArtifact.world.entities.length,
+          relationships: compiledArtifact.world.relationships.length,
+        },
+        worldMatchesCanonical:
+          canonicalJson(parsedCanonicalWorld) === canonicalJson(compiledArtifact.world),
+        worldSchemaVersion: compiledArtifact.world.artifactSchemaVersion,
+      },
+    )}.`,
   );
 }
 const districts = expectStatus(
@@ -1439,7 +1785,7 @@ const controls = expectStatus(
   200,
   'browse account control relationships',
 );
-if (controls.items.length !== 2) {
+if (controls.items.length !== 3) {
   throw new Error('Every playable member did not receive exactly one account control edge.');
 }
 const districtNeighbors = expectStatus(
@@ -1553,11 +1899,511 @@ if (!noticeHistory || JSON.stringify(noticeHistory).includes('Guild Founding Day
   throw new Error('Notice execution history was missing or leaked notice text.');
 }
 
+const initializeGovernanceCommand = {
+  commandId: randomUUID(),
+  expectedAggregateVersion: '0',
+  expectedStateRevision: simulation.stateRevision,
+  expectedTick: simulation.clock.currentTick,
+  expectedWorldVersion: simulation.designVersion,
+  idempotencyKey: `governance-initialize-${run}`,
+  payload: {
+    compiledWorldVersionId: runtimeSummary.activeWorldVersionId,
+    seedPlanHash: compiledArtifact.world.governanceSeedPlanHash,
+  },
+  schemaVersion: 1,
+  type: 'InitializeWorldGovernanceV1',
+};
+const initializedGovernance = expectStatus(
+  await commandMutation(alice, worldId, initializeGovernanceCommand),
+  200,
+  'InitializeWorldGovernanceV1',
+);
+const initializedGovernanceReplay = expectStatus(
+  await commandMutation(alice, worldId, initializeGovernanceCommand),
+  200,
+  'replay InitializeWorldGovernanceV1',
+);
+if (
+  initializedGovernance.status !== 'accepted' ||
+  initializedGovernance.eventIds.length !== 25 ||
+  JSON.stringify(initializedGovernanceReplay) !== JSON.stringify(initializedGovernance)
+) {
+  throw new Error(
+    `Governance initialization/replay was not exact: ${JSON.stringify(initializedGovernance)}.`,
+  );
+}
+const [governanceCharter, governanceInstitutions, governanceOffices] = await Promise.all([
+  browserRequest(alice, `/worlds/${worldId}/governance/charter`),
+  browserRequest(bob, `/worlds/${worldId}/governance/institutions?limit=100`),
+  browserRequest(observer, `/worlds/${worldId}/governance/offices?limit=100`),
+]);
+const charter = expectStatus(governanceCharter, 200, 'read initialized governance charter');
+const institutions = expectStatus(
+  governanceInstitutions,
+  200,
+  'read governance institutions as a player',
+);
+const offices = expectStatus(governanceOffices, 200, 'read governance offices as an observer');
+if (
+  charter.title !== 'Harbor City Civic Charter' ||
+  !/^[a-f0-9]{64}$/u.test(charter.checksum) ||
+  institutions.items.length !== 1 ||
+  offices.items.length !== 2 ||
+  institutions.page.nextCursor !== null ||
+  offices.page.nextCursor !== null
+) {
+  throw new Error('Initialized governance charter, institution, or office projection was invalid.');
+}
+
+const institution = institutions.items[0];
+const treasurerOffice = offices.items.find(
+  (office) => office.stableKey === 'office:guild-council:treasurer',
+);
+const initialElections = await readGovernancePage(
+  alice,
+  worldId,
+  'elections?limit=100',
+  'read initialized governance elections',
+);
+const selectedElection = initialElections.items.find(
+  (election) =>
+    election.officeId === treasurerOffice?.officeId && election.status === 'nominations_open',
+);
+if (!institution || !treasurerOffice || !selectedElection || !aliceController) {
+  throw new Error(
+    'The real governance demo could not resolve its institution, office, election, or actor.',
+  );
+}
+
+let governanceClock = await readSimulationClock(alice, worldId);
+const nominationCommand = governanceCommand(
+  governanceClock,
+  'NominateCandidateV1',
+  {
+    candidateEntityKey: aliceController.entityLogicalKey,
+    electionId: selectedElection.electionId,
+    expectedElectionVersion: selectedElection.aggregateVersion,
+    officeId: selectedElection.officeId,
+    statement: 'Keep public funds auditable and every exercise of office authority bounded.',
+  },
+  selectedElection.aggregateVersion,
+  `governance-nominate-alice-${run}`,
+);
+await submitGovernanceCommand(alice, worldId, nominationCommand);
+let aliceCandidacy = await waitForGovernanceItem(
+  alice,
+  worldId,
+  `elections/${selectedElection.electionId}/candidates?limit=100`,
+  'read nominated Treasurer candidate',
+  (candidate) =>
+    candidate.candidateEntityKey === aliceController.entityLogicalKey &&
+    candidate.status === 'nominated',
+);
+governanceClock = await readSimulationClock(alice, worldId);
+await submitGovernanceCommand(
+  alice,
+  worldId,
+  governanceCommand(
+    governanceClock,
+    'AcceptNominationV1',
+    {
+      candidacyId: aliceCandidacy.candidacyId,
+      electionId: selectedElection.electionId,
+      expectedCandidacyVersion: aliceCandidacy.aggregateVersion,
+      expectedElectionVersion: selectedElection.aggregateVersion,
+    },
+    aliceCandidacy.aggregateVersion,
+    `governance-accept-alice-${run}`,
+  ),
+);
+aliceCandidacy = await waitForGovernanceItem(
+  alice,
+  worldId,
+  `elections/${selectedElection.electionId}/candidates?limit=100`,
+  'read accepted Treasurer candidate',
+  (candidate) =>
+    candidate.candidacyId === aliceCandidacy.candidacyId && candidate.status === 'accepted',
+);
+
+governanceClock = await readSimulationClock(alice, worldId);
+const proposalSponsorshipEndsAtTick = (
+  BigInt(governanceClock.clock.currentTick) + BigInt(charter.proposalRules.sponsorshipTicks)
+).toString();
+const proposalDebateEndsAtTick = (
+  BigInt(proposalSponsorshipEndsAtTick) + BigInt(charter.proposalRules.debateTicks)
+).toString();
+const proposalVotingOpensAtTick = proposalDebateEndsAtTick;
+const proposalVotingClosesAtTick = (
+  BigInt(proposalVotingOpensAtTick) + BigInt(charter.proposalRules.votingTicks)
+).toString();
+const publicProposalCommand = governanceCommand(
+  governanceClock,
+  'CreateProposalV1',
+  {
+    action: {
+      actionSchemaVersion: 1,
+      actionType: 'create_law',
+      effectiveFromTick: proposalVotingClosesAtTick,
+      effectiveUntilTick: null,
+      lawKey: `law:compose-harbor-safety-${run}`,
+      policy: { kind: 'membership_role', role: 'player' },
+      summary: 'Establishes a versioned harbor-safety authority rule through a real public ballot.',
+      targetCharterVersion: charter.version,
+      title: 'Compose Harbor Safety',
+    },
+    approvalThresholdBps: charter.proposalRules.approvalThresholdBps,
+    ballotPolicy: charter.proposalRules.ballotPolicy,
+    body: 'Three independent accounts exercise the compiled charter and deterministic tally path.',
+    debateEndsAtTick: proposalDebateEndsAtTick,
+    institutionId: institution.institutionId,
+    jurisdictionEntityKey: institution.jurisdictionEntityKey,
+    minimumSponsors: charter.proposalRules.minimumSponsors,
+    proposalKey: `proposal:compose-harbor-safety-${run}`,
+    quorumBps: charter.proposalRules.quorumBps,
+    sponsorshipEndsAtTick: proposalSponsorshipEndsAtTick,
+    targetCharterVersion: charter.version,
+    title: 'Compose Harbor Safety Proposal',
+    votingClosesAtTick: proposalVotingClosesAtTick,
+    votingOpensAtTick: proposalVotingOpensAtTick,
+  },
+  '0',
+  `governance-create-public-proposal-${run}`,
+);
+await submitGovernanceCommand(alice, worldId, publicProposalCommand);
+const scheduledPublicProposal = await waitForGovernanceItem(
+  alice,
+  worldId,
+  'proposals?limit=100',
+  'read debating public proposal',
+  (proposal) => proposal.title === 'Compose Harbor Safety Proposal' && proposal.status === 'debate',
+);
+
+await advanceSimulationTo(
+  alice,
+  worldId,
+  proposalVotingOpensAtTick,
+  `governance-advance-proposal-open-${run}`,
+);
+const openedPublicProposal = await waitForGovernanceItem(
+  alice,
+  worldId,
+  'proposals?limit=100',
+  'wait for public proposal voting',
+  (proposal) =>
+    proposal.proposalId === scheduledPublicProposal.proposalId && proposal.status === 'open',
+);
+if (
+  openedPublicProposal.eligibleCount !== 3 ||
+  !openedPublicProposal.eligibilitySnapshotId ||
+  openedPublicProposal.ballotPolicy.ballotMode !== 'public' ||
+  openedPublicProposal.ballotPolicy.disclosure !== 'choice_totals' ||
+  openedPublicProposal.ballotPolicy.replacementAllowed !== true
+) {
+  throw new Error(
+    `The public proposal snapshot was not exact: ${JSON.stringify(openedPublicProposal)}.`,
+  );
+}
+
+governanceClock = await readSimulationClock(alice, worldId);
+const firstAliceBallot = governanceCommand(
+  governanceClock,
+  'CastProposalBallotV1',
+  {
+    choice: 'no',
+    eligibilitySnapshotId: openedPublicProposal.eligibilitySnapshotId,
+    expectedProposalVersion: openedPublicProposal.aggregateVersion,
+    proposalId: openedPublicProposal.proposalId,
+    replaceExisting: false,
+  },
+  openedPublicProposal.aggregateVersion,
+  `governance-public-ballot-alice-first-${run}`,
+);
+const firstAliceBallotResult = await submitGovernanceCommand(alice, worldId, firstAliceBallot);
+const firstAliceBallotReplay = await submitGovernanceCommand(alice, worldId, firstAliceBallot);
+if (JSON.stringify(firstAliceBallotReplay) !== JSON.stringify(firstAliceBallotResult)) {
+  throw new Error('The first public ballot did not replay its exact durable result.');
+}
+
+governanceClock = await readSimulationClock(alice, worldId);
+await submitGovernanceCommand(
+  alice,
+  worldId,
+  governanceCommand(
+    governanceClock,
+    'CastProposalBallotV1',
+    {
+      choice: 'yes',
+      eligibilitySnapshotId: openedPublicProposal.eligibilitySnapshotId,
+      expectedProposalVersion: openedPublicProposal.aggregateVersion,
+      proposalId: openedPublicProposal.proposalId,
+      replaceExisting: true,
+    },
+    openedPublicProposal.aggregateVersion,
+    `governance-public-ballot-alice-replacement-${run}`,
+  ),
+);
+for (const [label, voter] of [
+  ['bob', bob],
+  ['cora', cora],
+]) {
+  governanceClock = await readSimulationClock(voter, worldId);
+  await submitGovernanceCommand(
+    voter,
+    worldId,
+    governanceCommand(
+      governanceClock,
+      'CastProposalBallotV1',
+      {
+        choice: 'yes',
+        eligibilitySnapshotId: openedPublicProposal.eligibilitySnapshotId,
+        expectedProposalVersion: openedPublicProposal.aggregateVersion,
+        proposalId: openedPublicProposal.proposalId,
+        replaceExisting: false,
+      },
+      openedPublicProposal.aggregateVersion,
+      `governance-public-ballot-${label}-${run}`,
+    ),
+  );
+}
+governanceClock = await readSimulationClock(observer, worldId);
+const observerBallot = governanceCommand(
+  governanceClock,
+  'CastProposalBallotV1',
+  {
+    choice: 'yes',
+    eligibilitySnapshotId: openedPublicProposal.eligibilitySnapshotId,
+    expectedProposalVersion: openedPublicProposal.aggregateVersion,
+    proposalId: openedPublicProposal.proposalId,
+    replaceExisting: false,
+  },
+  openedPublicProposal.aggregateVersion,
+  `governance-public-ballot-observer-denied-${run}`,
+);
+const observerBallotDenied = expectStatus(
+  await commandMutation(observer, worldId, observerBallot),
+  403,
+  'deny observer governance ballot',
+);
+if (
+  observerBallotDenied.status !== 'rejected' ||
+  observerBallotDenied.rejectionCode !== 'AUTHORIZATION_DENIED'
+) {
+  throw new Error(
+    `Observer ballot denial was not durable and explicit: ${JSON.stringify(observerBallotDenied)}.`,
+  );
+}
+const replacedReceipt = expectStatus(
+  await browserRequest(
+    alice,
+    `/worlds/${worldId}/governance/proposals/${openedPublicProposal.proposalId}/receipt`,
+  ),
+  200,
+  'read replaced public ballot receipt',
+);
+if (replacedReceipt.ballotMode !== 'public' || replacedReceipt.choice !== 'yes') {
+  throw new Error(
+    `The effective public ballot was not the replacement: ${JSON.stringify(replacedReceipt)}.`,
+  );
+}
+
+await advanceSimulationTo(
+  alice,
+  worldId,
+  proposalVotingClosesAtTick,
+  `governance-advance-proposal-close-${run}`,
+);
+const enactedPublicProposal = await waitForGovernanceItem(
+  alice,
+  worldId,
+  'proposals?limit=100',
+  'wait for public proposal enactment',
+  (proposal) =>
+    proposal.proposalId === openedPublicProposal.proposalId && proposal.status === 'enacted',
+);
+const publicProposalResult = expectStatus(
+  await browserRequest(
+    alice,
+    `/worlds/${worldId}/governance/proposals/${openedPublicProposal.proposalId}/result`,
+  ),
+  200,
+  'read certified public proposal result',
+);
+const enactedLaws = await readGovernancePage(
+  observer,
+  worldId,
+  'laws?limit=100',
+  'read enacted law as observer',
+);
+const publicSafetyLaw = enactedLaws.items.find(
+  (law) => law.stableKey === `law:compose-harbor-safety-${run}`,
+);
+if (
+  enactedPublicProposal.turnoutCount !== 3 ||
+  publicProposalResult.outcome !== 'passed' ||
+  publicProposalResult.certified !== true ||
+  publicProposalResult.yesCount !== 3 ||
+  publicProposalResult.noCount !== 0 ||
+  !publicSafetyLaw ||
+  publicSafetyLaw.status !== 'active' ||
+  publicSafetyLaw.effectiveFromTick !== proposalVotingClosesAtTick
+) {
+  throw new Error(
+    `The real proposal tally or law enactment was not exact: ${JSON.stringify({
+      enactedPublicProposal,
+      publicProposalResult,
+    })}.`,
+  );
+}
+
+await advanceSimulationTo(
+  alice,
+  worldId,
+  selectedElection.votingOpensAtTick,
+  `governance-advance-election-open-${run}`,
+);
+const openedElection = await waitForGovernanceItem(
+  alice,
+  worldId,
+  'elections?limit=100',
+  'wait for secret Treasurer election',
+  (election) => election.electionId === selectedElection.electionId && election.status === 'open',
+);
+if (
+  openedElection.eligibleCount !== 3 ||
+  !openedElection.eligibilitySnapshotId ||
+  openedElection.ballotPolicy.ballotMode !== 'secret' ||
+  openedElection.ballotPolicy.disclosure !== 'aggregate_only' ||
+  openedElection.ballotPolicy.replacementAllowed !== false
+) {
+  throw new Error(`The secret election snapshot was not exact: ${JSON.stringify(openedElection)}.`);
+}
+for (const [label, voter] of [
+  ['alice', alice],
+  ['bob', bob],
+  ['cora', cora],
+]) {
+  governanceClock = await readSimulationClock(voter, worldId);
+  await submitGovernanceCommand(
+    voter,
+    worldId,
+    governanceCommand(
+      governanceClock,
+      'CastElectionBallotV1',
+      {
+        choice: {
+          candidateKey: aliceController.entityLogicalKey,
+          choiceType: 'candidate',
+        },
+        electionId: openedElection.electionId,
+        eligibilitySnapshotId: openedElection.eligibilitySnapshotId,
+        expectedElectionVersion: openedElection.aggregateVersion,
+        replaceExisting: false,
+      },
+      openedElection.aggregateVersion,
+      `governance-secret-election-ballot-${label}-${run}`,
+    ),
+  );
+}
+const secretElectionReceipt = expectStatus(
+  await browserRequest(
+    cora,
+    `/worlds/${worldId}/governance/elections/${openedElection.electionId}/receipt`,
+  ),
+  200,
+  'read secret election receipt',
+);
+if (
+  secretElectionReceipt.ballotMode !== 'secret' ||
+  Object.hasOwn(secretElectionReceipt, 'choice') ||
+  JSON.stringify(secretElectionReceipt).includes(aliceController.entityLogicalKey)
+) {
+  throw new Error(
+    `The secret election receipt leaked a selection: ${JSON.stringify(secretElectionReceipt)}.`,
+  );
+}
+
+await advanceSimulationTo(
+  alice,
+  worldId,
+  openedElection.votingClosesAtTick,
+  `governance-advance-election-close-${run}`,
+);
+const certifiedElection = await waitForGovernanceItem(
+  alice,
+  worldId,
+  'elections?limit=100',
+  'wait for Treasurer election certification',
+  (election) =>
+    election.electionId === openedElection.electionId && election.status === 'certified',
+);
+const certifiedElectionResult = expectStatus(
+  await browserRequest(
+    observer,
+    `/worlds/${worldId}/governance/elections/${openedElection.electionId}/result`,
+  ),
+  200,
+  'read certified Treasurer election result',
+);
+const certifiedTerms = await readGovernancePage(
+  observer,
+  worldId,
+  'terms?limit=100',
+  'read certified office term',
+);
+const successorElections = await readGovernancePage(
+  observer,
+  worldId,
+  'elections?limit=100',
+  'read scheduled successor Treasurer election',
+);
+const successorElection = successorElections.items.find(
+  (election) =>
+    election.officeId === openedElection.officeId &&
+    election.electionId !== openedElection.electionId &&
+    election.votingOpensAtTick === (BigInt(openedElection.votingOpensAtTick) + 48n).toString(),
+);
+const electedTermEndsAtTick = (
+  BigInt(openedElection.votingClosesAtTick) + BigInt(treasurerOffice.termDurationTicks)
+).toString();
+if (
+  certifiedElection.turnoutCount !== 3 ||
+  certifiedElectionResult.certified !== true ||
+  certifiedElectionResult.outcome !== 'elected' ||
+  certifiedElectionResult.winnerCandidateKey !== aliceController.entityLogicalKey ||
+  certifiedElectionResult.candidateTotals.length !== 1 ||
+  certifiedElectionResult.candidateTotals[0]?.voteCount !== 3 ||
+  !successorElection ||
+  successorElection.status !== 'nominations_scheduled' ||
+  successorElection.votingClosesAtTick !==
+    (BigInt(openedElection.votingClosesAtTick) + 48n).toString() ||
+  successorElection.ballotPolicy.ballotMode !== 'secret' ||
+  successorElection.ballotPolicy.disclosure !== 'aggregate_only' ||
+  successorElection.ballotPolicy.replacementAllowed !== false ||
+  !certifiedTerms.items.some(
+    (term) =>
+      term.sourceId === certifiedElectionResult.resultId &&
+      term.sourceType === 'election' &&
+      term.holderEntityKey === aliceController.entityLogicalKey &&
+      term.startsAtTick === openedElection.votingClosesAtTick &&
+      term.endsAtTick === electedTermEndsAtTick &&
+      term.status === 'active',
+  )
+) {
+  throw new Error(
+    `The real secret election or term transition was not exact: ${JSON.stringify({
+      certifiedElection,
+      certifiedElectionResult,
+    })}.`,
+  );
+}
+
+simulation = await readSimulationClock(alice, worldId);
+
 const economyBeforeInitialization = await readEconomySummary(alice, worldId);
 if (
   economyBeforeInitialization.status !== 'not_initialized' ||
   economyBeforeInitialization.economyHeadVersion !== null ||
-  economyBeforeInitialization.currentTick !== '3' ||
+  economyBeforeInitialization.currentTick !== '27' ||
   economyBeforeInitialization.designVersion !== String(runtimeSummary.worldVersionNumber) ||
   economyBeforeInitialization.stateRevision !== simulation.stateRevision ||
   economyBeforeInitialization.seedPlan.available !== true ||
@@ -1605,7 +2451,7 @@ if (
   economySummary.stateRevision !== initializedEconomy.resultingStateRevision ||
   economySummary.reconciliation.status !== 'reconciling' ||
   economySummary.issuanceTarget?.currencyCode !== 'GCR' ||
-  economySummary.issuanceTarget.currentSupplyMinor !== '20000' ||
+  economySummary.issuanceTarget.currentSupplyMinor !== '30000' ||
   economySummary.issuanceTarget.treasuryBalanceMinor !== '0' ||
   currencyPage.items.length !== 1 ||
   currencyPage.nextCursor !== null ||
@@ -1614,7 +2460,7 @@ if (
   currencyPage.items[0].currency.minorUnitScale !== 2 ||
   currencyPage.items[0].currency.noCashValue !== true ||
   currencyPage.items[0].currency.cashOutAllowed !== false ||
-  currencyPage.items[0].currentSupplyMinor !== '20000' ||
+  currencyPage.items[0].currentSupplyMinor !== '30000' ||
   aliceWallet.wallet.walletKind !== 'player' ||
   bobWallet.wallet.walletKind !== 'player' ||
   aliceWallet.wallet.currencyId !== currencyPage.items[0].currency.id ||
@@ -1876,7 +2722,7 @@ if (
     reconcileEconomy.expectedStateRevision ||
   !/^[a-f0-9]{64}$/u.test(economySummary.projectionChecksum ?? '') ||
   finalCurrencyPage.items.length !== 1 ||
-  finalCurrencyPage.items[0].currentSupplyMinor !== '20000' ||
+  finalCurrencyPage.items[0].currentSupplyMinor !== '30000' ||
   economySummary.issuanceTarget?.treasuryBalanceMinor !== '0'
 ) {
   throw new Error(`Final economy reconciliation was not exact: ${JSON.stringify(economySummary)}.`);
@@ -2010,28 +2856,44 @@ if (
 
 const aliceCommerceWallets = await controlledWallets(alice, worldId, 'Alice commerce');
 const bobCommerceWallets = await controlledWallets(bob, worldId, 'Bob commerce');
-const aliceControlsBusiness = aliceCommerceWallets.some(
-  (item) => item.wallet.id === business.walletId,
+const coraCommerceWallets = await controlledWallets(cora, worldId, 'Cora commerce');
+const commerceActors = [
+  { jar: alice, label: 'Alice', wallets: aliceCommerceWallets },
+  { jar: bob, label: 'Bob', wallets: bobCommerceWallets },
+  { jar: cora, label: 'Cora', wallets: coraCommerceWallets },
+];
+const managerActor = commerceActors.find((actor) =>
+  actor.wallets.some((item) => item.wallet.id === business.walletId),
 );
-const bobControlsBusiness = bobCommerceWallets.some((item) => item.wallet.id === business.walletId);
-if (!aliceControlsBusiness && !bobControlsBusiness) {
+const workerActor = commerceActors.find((actor) =>
+  actor.wallets.some(
+    (item) =>
+      item.wallet.walletKind === 'organization' &&
+      item.wallet.ownerEntityLogicalKey === 'organization:artisan-guild',
+  ),
+);
+if (!managerActor) {
   throw new Error('No compiled player affiliation controlled the seeded business wallet.');
 }
-const managerJar = aliceControlsBusiness ? alice : bob;
-const workerJar = aliceControlsBusiness ? bob : alice;
-const managerLabel = aliceControlsBusiness ? 'Alice' : 'Bob';
-const workerLabel = aliceControlsBusiness ? 'Bob' : 'Alice';
-let managerWallets = aliceControlsBusiness ? aliceCommerceWallets : bobCommerceWallets;
+if (!workerActor || workerActor === managerActor) {
+  throw new Error('No distinct compiled player affiliation controlled the artisan wallet.');
+}
+const managerJar = managerActor.jar;
+const workerJar = workerActor.jar;
+const managerLabel = managerActor.label;
+const workerLabel = workerActor.label;
+let managerWallets = managerActor.wallets;
 let managerPlayerWallet = managerWallets.find((item) => item.wallet.walletKind === 'player');
 let businessWallet = managerWallets.find((item) => item.wallet.id === business.walletId);
-const workerCommerceWallets = aliceControlsBusiness ? bobCommerceWallets : aliceCommerceWallets;
 let workerPlayerWallet = await onlyControlledPlayerWallet(
   workerJar,
   worldId,
   `${workerLabel} commerce worker`,
 );
-const workerOrganizationWallet = workerCommerceWallets.find(
-  (item) => item.wallet.walletKind === 'organization',
+const workerOrganizationWallet = workerActor.wallets.find(
+  (item) =>
+    item.wallet.walletKind === 'organization' &&
+    item.wallet.ownerEntityLogicalKey === 'organization:artisan-guild',
 );
 if (
   !managerPlayerWallet ||
@@ -2111,7 +2973,7 @@ await submitEconomyCommand(
 const configuredFacilityPage = await readCommercePage(
   managerJar,
   worldId,
-  `facilities?businessId=${encodeURIComponent(business.id)}&limit=100`,
+  'facilities?limit=100',
   'read runtime-configured facility',
 );
 const configuredAnnex = configuredFacilityPage.items.find(
@@ -2141,13 +3003,7 @@ const deniedAnnexTransferCommand = economyCommand(
   `commerce-transfer-configured-annex-denied-${run}`,
 );
 const deniedAnnexTransfer = expectStatus(
-  await mutation(
-    managerJar,
-    `/worlds/${worldId}/commands`,
-    'POST',
-    deniedAnnexTransferCommand,
-    deniedAnnexTransferCommand.idempotencyKey,
-  ),
+  await commandMutation(managerJar, worldId, deniedAnnexTransferCommand),
   409,
   'reject configured facility title transfer',
 );
@@ -2219,6 +3075,11 @@ if (!workerCandidate) {
 const commerceStartTick = simulation.clock.currentTick;
 const payrollTick = (BigInt(commerceStartTick) + 1n).toString(10);
 const productionTick = (BigInt(commerceStartTick) + 12n).toString(10);
+const periodicTaxTicks = [5n, 10n, 15n].map((offset) =>
+  (BigInt(commerceStartTick) + offset).toString(10),
+);
+const finalPeriodicTaxTick = periodicTaxTicks[2];
+if (!finalPeriodicTaxTick) throw new Error('The final periodic-tax tick was not derived.');
 const contractCommand = worldCommerceCommand(
   await commerceContext(managerJar, worldId),
   'CreateEmploymentContractV1',
@@ -2355,10 +3216,10 @@ if (
   throw new Error(`Payroll settlement was not exact: ${JSON.stringify(paidJobs)}.`);
 }
 
-for (const taxTick of ['5', '10']) {
+for (const [index, taxTick] of periodicTaxTicks.slice(0, 2).entries()) {
   await advanceSimulationTo(alice, worldId, taxTick, `commerce-advance-tax-${taxTick}-${run}`);
   await waitForScheduledAction(alice, worldId, 'AssessPeriodicTaxV1', taxTick);
-  const expectedCount = Number(BigInt(taxTick) / 5n);
+  const expectedCount = index + 1;
   await waitForCommerce(
     managerJar,
     worldId,
@@ -2370,10 +3231,7 @@ for (const taxTick of ['5', '10']) {
   );
 }
 await advanceSimulationTo(alice, worldId, productionTick, `commerce-advance-production-${run}`);
-await Promise.all([
-  waitForScheduledAction(alice, worldId, 'AssessPeriodicTaxV1', productionTick),
-  waitForScheduledAction(alice, worldId, 'CompleteProductionRunV1', productionTick),
-]);
+await waitForScheduledAction(alice, worldId, 'CompleteProductionRunV1', productionTick);
 await waitForCommerce(
   managerJar,
   worldId,
@@ -2449,11 +3307,20 @@ const metalInventory = facilityInventories.find(
   (item) => item.resourceType.stableKey === 'resource:metal-part',
 );
 if (!metalInventory) throw new Error('Produced metal-part inventory was missing.');
+const proposalLifecycleTicks =
+  BigInt(charter.proposalRules.sponsorshipTicks) +
+  BigInt(charter.proposalRules.debateTicks) +
+  BigInt(charter.proposalRules.votingTicks);
+const listingExpiresAtTick = (
+  BigInt(finalPeriodicTaxTick) +
+  proposalLifecycleTicks * 2n +
+  1n
+).toString(10);
 const listingCommand = worldCommerceCommand(
   await commerceContext(managerJar, worldId),
   'CreateMarketListingV1',
   {
-    expiresAtTick: (BigInt(productionTick) + 15n).toString(10),
+    expiresAtTick: listingExpiresAtTick,
     expectedInventoryVersion: metalInventory.rowVersion,
     quantity: '10',
     sellerInventoryId: metalInventory.id,
@@ -2583,11 +3450,22 @@ if (
   );
 }
 
-const taxPage = await readCommercePage(
+await advanceSimulationTo(
+  alice,
+  worldId,
+  finalPeriodicTaxTick,
+  `commerce-advance-tax-${finalPeriodicTaxTick}-${run}`,
+);
+await waitForScheduledAction(alice, worldId, 'AssessPeriodicTaxV1', finalPeriodicTaxTick);
+
+const taxPage = await waitForCommerce(
   observer,
   worldId,
   'tax-assessments?limit=100',
   'read collected tax assessments',
+  (page) =>
+    page.items.filter((item) => item.sourceType === 'periodic_tax').length === 3 &&
+    page.items.filter((item) => item.sourceType === 'market_trade').length === 1,
 );
 const periodicTaxes = taxPage.items.filter((item) => item.sourceType === 'periodic_tax');
 const salesTaxes = taxPage.items.filter((item) => item.sourceType === 'market_trade');
@@ -2605,11 +3483,174 @@ if (
   treasury.treasury.balanceMinor !== '37' ||
   treasury.treasury.revenueMinor !== '37' ||
   treasury.treasury.noCashValue !== true ||
-  treasury.treasury.lastRevenueTick !== productionTick
+  treasury.treasury.lastRevenueTick !== finalPeriodicTaxTick
 ) {
   throw new Error(
     `Tax and treasury state was not exact: ${JSON.stringify({ taxPage, treasury })}.`,
   );
+}
+
+const salesTaxAssessment = salesTaxes[0];
+if (!salesTaxAssessment) throw new Error('The governed sales-tax target was not discoverable.');
+const governedTax = await enactPublicGovernanceProposal({
+  action: (effectiveFromTick) => ({
+    actionSchemaVersion: 1,
+    actionType: 'update_tax',
+    effectiveFromTick,
+    expectedTaxPolicyVersion: '1',
+    newRateBps: 333,
+    taxPolicyId: salesTaxAssessment.policyId,
+  }),
+  body: 'Three citizens approve a bounded sales-tax change through the compiled charter.',
+  charter,
+  idempotencyPrefix: `governance-compose-tax-${run}`,
+  institution,
+  proposalKey: `proposal:compose-sales-tax-${run}`,
+  proposer: alice,
+  title: 'Compose Sales Tax Update',
+  voters: [alice, bob, cora],
+  worldId,
+});
+const governedProject = await enactPublicGovernanceProposal({
+  action: (effectiveAtTick) => ({
+    actionSchemaVersion: 1,
+    actionType: 'authorize_public_project',
+    amountMinor: '20',
+    budgetKey: `budget:compose-civic-platform-${run}`,
+    currencyId: treasury.treasury.currencyId,
+    description: 'Funds a bounded accessibility repair on the public harbor platform.',
+    effectiveAtTick,
+    projectKey: 'district:civic-platform',
+    treasuryWalletId: treasury.treasury.treasuryWalletId,
+  }),
+  body: 'Three citizens authorize a treasury-backed civic-platform repair.',
+  charter,
+  idempotencyPrefix: `governance-compose-project-${run}`,
+  institution,
+  proposalKey: `proposal:compose-civic-platform-${run}`,
+  proposer: alice,
+  title: 'Compose Civic Platform Project',
+  voters: [alice, bob, cora],
+  worldId,
+});
+const governedEffects = await readGovernancePage(
+  observer,
+  worldId,
+  'proposals?limit=100',
+  'read governed tax and project enactments',
+);
+if (
+  governedTax.action.actionType !== 'update_tax' ||
+  governedProject.action.actionType !== 'authorize_public_project' ||
+  !governedEffects.items.some(
+    (proposal) =>
+      proposal.proposalId === governedTax.proposal.proposalId &&
+      proposal.status === 'enacted' &&
+      proposal.action.actionType === 'update_tax' &&
+      proposal.action.newRateBps === 333,
+  ) ||
+  !governedEffects.items.some(
+    (proposal) =>
+      proposal.proposalId === governedProject.proposal.proposalId &&
+      proposal.status === 'enacted' &&
+      proposal.action.actionType === 'authorize_public_project' &&
+      proposal.action.amountMinor === '20',
+  )
+) {
+  throw new Error('The governed tax/project effects were not visible through the public API.');
+}
+const postGovernanceTaxPage = await waitForCommerce(
+  observer,
+  worldId,
+  'tax-assessments?limit=100',
+  'read post-governance tax assessments',
+  (page) =>
+    page.items.filter((item) => item.sourceType === 'periodic_tax').length === 5 &&
+    page.items.filter((item) => item.sourceType === 'market_trade').length === 1,
+);
+const postGovernancePeriodicTaxes = postGovernanceTaxPage.items.filter(
+  (item) => item.sourceType === 'periodic_tax',
+);
+const postGovernanceSalesTaxes = postGovernanceTaxPage.items.filter(
+  (item) => item.sourceType === 'market_trade',
+);
+const postGovernanceTreasury = expectStatus(
+  await browserRequest(observer, `/worlds/${worldId}/economy/treasury`),
+  200,
+  'read post-governance treasury summary',
+);
+const postGovernanceListingPage = await readCommercePage(
+  workerJar,
+  worldId,
+  'market/listings?status=open&limit=100',
+  'read retained partially filled listing',
+);
+const postGovernanceListing = postGovernanceListingPage.items.find((item) => item.id === listingId);
+if (
+  postGovernancePeriodicTaxes.length !== 5 ||
+  postGovernancePeriodicTaxes.some((item) => item.amountMinor !== '10') ||
+  postGovernanceSalesTaxes.length !== 1 ||
+  postGovernanceSalesTaxes[0].amountMinor !== '7' ||
+  postGovernanceTaxPage.items.reduce((sum, item) => sum + BigInt(item.amountMinor), 0n) !== 57n ||
+  postGovernanceTreasury.treasury.balanceMinor !== '57' ||
+  postGovernanceTreasury.treasury.revenueMinor !== '57' ||
+  postGovernanceTreasury.treasury.noCashValue !== true ||
+  postGovernanceTreasury.treasury.lastRevenueTick !== governedProject.votingClosesAtTick ||
+  !postGovernanceListing ||
+  postGovernanceListing.remainingQuantity !== '7' ||
+  postGovernanceListing.rowVersion !== '2' ||
+  postGovernanceListing.expiresAtTick !== listingExpiresAtTick
+) {
+  throw new Error(
+    `Post-governance commerce state was not exact: ${JSON.stringify({
+      postGovernanceListingPage,
+      postGovernanceTaxPage,
+      postGovernanceTreasury,
+    })}.`,
+  );
+}
+if (commerceBrowserSmokeEnabled) {
+  const overrideClock = await readSimulationClock(alice, worldId);
+  await runLiveGovernanceBrowserDemo({
+    baseUrl: browserOrigin,
+    creatorCookieHeader: alice.header(),
+    effectiveAtTick: overrideClock.clock.currentTick,
+    electedHolderEntityKey: aliceController.entityLogicalKey,
+    lawId: publicSafetyLaw.lawId,
+    lawTitle: publicSafetyLaw.title,
+    lawVersion: publicSafetyLaw.lawVersion,
+    observerCookieHeader: observer.header(),
+    password,
+    projectProposalTitle: 'Compose Civic Platform Project',
+    taxProposalTitle: 'Compose Sales Tax Update',
+    worldId,
+  });
+  const postOverrideLaws = await readGovernancePage(
+    observer,
+    worldId,
+    'laws?limit=100',
+    'read explicit override law transition',
+  );
+  const postOverrideLaw = postOverrideLaws.items.find(
+    (law) => law.lawId === publicSafetyLaw.lawId && law.lawVersion === publicSafetyLaw.lawVersion,
+  );
+  const postOverrideAudit = await readGovernancePage(
+    observer,
+    worldId,
+    'audit?limit=100',
+    'read explicit override audit',
+  );
+  if (
+    postOverrideLaw?.status !== 'repealed' ||
+    !postOverrideAudit.items.some(
+      (item) =>
+        item.eventType === 'governance.override' &&
+        item.actorMode === 'creator' &&
+        item.reason === 'Emergency harbor access conflict requires a bounded repeal.',
+    )
+  ) {
+    throw new Error('The browser override was not persisted as a distinct creator audit fact.');
+  }
 }
 
 inventoryPage = await readCommercePage(
@@ -2665,7 +3706,7 @@ if (
   commerceReconciliation.lastRun.resourceCount !== 3 ||
   commerceReconciliation.lastRun.inventoryCount !== 4 ||
   commerceReconciliation.lastRun.tradeCount !== 1 ||
-  commerceReconciliation.lastRun.assessmentCount !== 4 ||
+  commerceReconciliation.lastRun.assessmentCount !== 6 ||
   commerceReconciliation.projection.status !== 'current' ||
   commerceReconciliation.projection.lagRevisions !== '0'
 ) {
@@ -2686,9 +3727,10 @@ if (commerceBrowserSmokeEnabled) {
     facilityCount: 2,
     jobGrossMinor: '100',
     jobTick: commerceStartTick,
+    lastRevenueTick: governedProject.votingClosesAtTick,
     managerCookieHeader: managerJar.header(),
     marketTaxMinor: '7',
-    periodicTaxCount: 3,
+    periodicTaxCount: 5,
     periodicTaxMinor: '10',
     productionInputCount: 2,
     productionQuantity: '10',
@@ -2699,7 +3741,7 @@ if (commerceBrowserSmokeEnabled) {
     reconciliationChecksum: commerceReconciliation.projectionChecksum,
     reconciliationStateRevision: commerceReconciled.resultingStateRevision,
     resourceDisplayName: 'Metal Part',
-    treasuryMinor: '37',
+    treasuryMinor: '57',
     worldId,
   });
 }
@@ -2743,17 +3785,18 @@ expectStatus(
   'reject unauthenticated commerce read',
 );
 
-managerWallets = await controlledWallets(managerJar, worldId, `${managerLabel} final commerce`);
-const workerWallets = await controlledWallets(workerJar, worldId, `${workerLabel} final commerce`);
-const visibleWallets = new Map(
-  [...managerWallets, ...workerWallets].map((item) => [item.wallet.id, item]),
+const finalCommerceWallets = await Promise.all(
+  commerceActors.map((actor) =>
+    controlledWallets(actor.jar, worldId, `${actor.label} final commerce`),
+  ),
 );
+const visibleWallets = new Map(finalCommerceWallets.flat().map((item) => [item.wallet.id, item]));
 if (
-  visibleWallets.size !== 4 ||
+  visibleWallets.size !== 5 ||
   [...visibleWallets.values()].reduce(
     (sum, item) => sum + BigInt(item.balance.availableMinor),
-    BigInt(treasury.treasury.balanceMinor),
-  ) !== 20000n
+    BigInt(postGovernanceTreasury.treasury.balanceMinor),
+  ) !== 30000n
 ) {
   throw new Error('Closed-loop currency conservation failed after commerce settlement.');
 }
@@ -2764,7 +3807,7 @@ const commerceCurrencyPage = expectStatus(
 );
 if (
   commerceCurrencyPage.items.length !== 1 ||
-  commerceCurrencyPage.items[0].currentSupplyMinor !== '20000'
+  commerceCurrencyPage.items[0].currentSupplyMinor !== '30000'
 ) {
   throw new Error('Commerce changed the closed-loop GCR supply.');
 }
@@ -2815,13 +3858,7 @@ for (let attempt = 0; attempt < 5 && !pauseAccepted; attempt += 1) {
     {},
     `simulation-pause-${attempt}-${run}`,
   );
-  const result = await mutation(
-    alice,
-    `/worlds/${worldId}/commands`,
-    'POST',
-    pause,
-    pause.idempotencyKey,
-  );
+  const result = await commandMutation(alice, worldId, pause);
   if (result.response.status === 200) pauseAccepted = true;
   else if (result.response.status !== 409) expectStatus(result, 200, 'PauseWorldClockV1');
 }
@@ -2845,5 +3882,5 @@ await waitFor(`${api}/health/ready`, 200);
 await verifyOperationalWorker('after-dependency-recovery');
 
 console.log(
-  `Compose smoke passed${commerceBrowserSmokeEnabled ? ' with two-session live browser commerce' : ''}: reviewed primitive bootstrap/retrieval, multi-user authority and safe observer reads, provider-disabled manifest generation/approval, deterministic compiler 1.2/artifact 3/economy plan 2 compile and activation, initialized closed-loop GCR plus commerce, private transfer and atomic title sale, public runtime business creation and facility configuration with title lock, employment/work exact replay/termination, payroll/production, periodic and sales tax, list-ten/buy-three exact replay, treasury/inventory/currency conservation, core and commerce reconciliation, tick-three notice execution, continuous PostgreSQL-fenced simulation, idempotent worker delivery, Redis/PostgreSQL degradation, and recovery verified.`,
+  `Compose smoke passed${commerceBrowserSmokeEnabled ? ' with two-session live browser commerce' : ''}: reviewed primitive bootstrap/retrieval, multi-user authority and safe observer reads, provider-disabled governed manifest generation/approval, deterministic compiler 1.3/artifact 4/economy plan 2/governance plan 1 compile and activation, three-account public proposal/replacement/law enactment plus secret election/term certification, initialized closed-loop GCR plus commerce, private transfer and atomic title sale, public runtime business creation and facility configuration with title lock, employment/work exact replay/termination, payroll/production, periodic and sales tax, list-ten/buy-three exact replay, treasury/inventory/currency conservation, core and commerce reconciliation, tick-three notice execution, continuous PostgreSQL-fenced simulation, idempotent worker delivery, Redis/PostgreSQL degradation, and recovery verified.`,
 );

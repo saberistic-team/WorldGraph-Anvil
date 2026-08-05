@@ -4,6 +4,7 @@ import type { RuntimeConfig } from '@worldgraph/config';
 import {
   createCompilerInputBundle,
   createPreviousCompilerInputBundle,
+  createRetainedCompilerInputBundle,
   memberPrincipalKey,
   verifyCompiledArtifact,
 } from '@worldgraph/compiler';
@@ -11,6 +12,7 @@ import {
   COMPILER_CONFIG_SCHEMA_VERSION,
   COMPILER_VERSION,
   PREVIOUS_COMPILER_VERSION,
+  RETAINED_COMPILER_VERSION,
   canonicalJson,
   type ApplicationNotification,
   type AuthorityAction,
@@ -20,6 +22,7 @@ import {
   type IdGenerator,
   type PrimitiveDraftInput,
   type PreviousCompilerInputBundleV1,
+  type RetainedCompilerInputBundleV1,
   type CompilerInputBundleV1,
   type RuntimeRevisionMetadata,
   type RuntimeSummaryView,
@@ -62,21 +65,32 @@ interface CursorPayload {
   worldId: string;
 }
 
-type RunnableCompilerVersion = typeof PREVIOUS_COMPILER_VERSION | typeof COMPILER_VERSION;
+type RunnableCompilerVersion =
+  typeof RETAINED_COMPILER_VERSION | typeof PREVIOUS_COMPILER_VERSION | typeof COMPILER_VERSION;
 
 /**
- * Manifest V1 is shared by the sealed M08 and current M09 compiler lanes.
- * Only the versioned M09 economy extension opts a manifest into compiler 1.2;
- * an absent or earlier extension remains reproducible through compiler 1.1.
+ * Manifest V1 is shared by the sealed M08, M09, and current M10 compiler lanes.
+ * Governance V1 requires compiler 1.3/artifact 4; economy V2 without governance
+ * stays on 1.2/artifact 3; absent/economy-V1 manifests remain reproducible on
+ * the retained 1.1/artifact 2 lane.
  */
 export function compilerVersionForManifest(manifest: WorldManifestV1): RunnableCompilerVersion {
-  const extension = manifest.extensions['worldgraph.economy'];
-  return extension !== null &&
-    typeof extension === 'object' &&
-    !Array.isArray(extension) &&
-    extension.schemaVersion === 2
-    ? COMPILER_VERSION
-    : PREVIOUS_COMPILER_VERSION;
+  const governance = manifest.extensions['worldgraph.governance'];
+  if (
+    governance !== null &&
+    typeof governance === 'object' &&
+    !Array.isArray(governance) &&
+    governance.schemaVersion === 1
+  ) {
+    return COMPILER_VERSION;
+  }
+  const economy = manifest.extensions['worldgraph.economy'];
+  return economy !== null &&
+    typeof economy === 'object' &&
+    !Array.isArray(economy) &&
+    economy.schemaVersion === 2
+    ? PREVIOUS_COMPILER_VERSION
+    : RETAINED_COMPILER_VERSION;
 }
 
 function primitiveDefinition(primitive: CompilationPrimitiveRecord): PrimitiveDraftInput {
@@ -503,7 +517,7 @@ export class CompilationService {
       activatedAt: (row.activated_at as Date).toISOString(),
       artifactHash: row.artifact_hash as string,
       compilerConfigVersion: row.compiler_config_version as 1,
-      compilerVersion: row.compiler_version as typeof COMPILER_VERSION,
+      compilerVersion: row.compiler_version as WorldCompilationRunView['compilerVersion'],
       controllerCount: Number(row.controller_count),
       entityCount: Number(row.entity_count),
       lastLedgerSequence: Number(row.last_ledger_sequence),
@@ -690,7 +704,9 @@ export class CompilationService {
     manifest: WorldManifestV1,
     seed: string,
     compilerVersion: RunnableCompilerVersion,
-  ): Promise<CompilerInputBundleV1 | PreviousCompilerInputBundleV1> {
+  ): Promise<
+    CompilerInputBundleV1 | PreviousCompilerInputBundleV1 | RetainedCompilerInputBundleV1
+  > {
     const primitives = await repository.compilationPrimitives(manifest);
     const members = await repository.activeMembers(worldId);
     const options = {
@@ -713,13 +729,20 @@ export class CompilationService {
       })),
       seed,
     };
-    return compilerVersion === COMPILER_VERSION
-      ? createCompilerInputBundle(options)
-      : createPreviousCompilerInputBundle(options);
+    if (compilerVersion === COMPILER_VERSION) return createCompilerInputBundle(options);
+    return compilerVersion === PREVIOUS_COMPILER_VERSION
+      ? createPreviousCompilerInputBundle(options)
+      : createRetainedCompilerInputBundle(options);
   }
 
   private runnableCompilerVersion(version: string): RunnableCompilerVersion {
-    if (version === COMPILER_VERSION || version === PREVIOUS_COMPILER_VERSION) return version;
+    if (
+      version === COMPILER_VERSION ||
+      version === PREVIOUS_COMPILER_VERSION ||
+      version === RETAINED_COMPILER_VERSION
+    ) {
+      return version;
+    }
     throw new ApplicationError(
       'COMPILER_VERSION_MISMATCH',
       'The compilation run uses a compiler version that this release cannot execute.',

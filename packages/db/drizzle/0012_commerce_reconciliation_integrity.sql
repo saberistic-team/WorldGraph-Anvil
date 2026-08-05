@@ -281,6 +281,363 @@ $function$;
 --> statement-breakpoint
 REVOKE ALL ON FUNCTION public.worldgraph_open_command_write(uuid,uuid) FROM PUBLIC;
 --> statement-breakpoint
+CREATE OR REPLACE FUNCTION public.worldgraph_protect_commerce_fact()
+RETURNS trigger
+LANGUAGE plpgsql
+SET search_path = pg_catalog, public
+AS $function$
+DECLARE
+  row_value jsonb := to_jsonb(NEW);
+  checked_world_id uuid := (row_value ->> 'world_id')::uuid;
+  checked_command_id uuid := COALESCE(
+    (row_value ->> 'command_id')::uuid,
+    (row_value ->> 'created_command_id')::uuid,
+    (row_value ->> 'configured_command_id')::uuid,
+    (row_value ->> 'start_command_id')::uuid
+  );
+  checked_command_type text;
+BEGIN
+  IF TG_OP <> 'INSERT' THEN
+    RAISE EXCEPTION '% rows are append-only', TG_TABLE_NAME USING ERRCODE = '55000';
+  END IF;
+  checked_command_type := public.worldgraph_commerce_command_type(checked_world_id);
+  IF checked_command_id IS DISTINCT FROM
+      NULLIF(current_setting('worldgraph.command_id', true), '')::uuid THEN
+    RAISE EXCEPTION '% fact requires its exact open command', TG_TABLE_NAME
+      USING ERRCODE = '55000';
+  END IF;
+  IF (TG_TABLE_NAME IN (
+      'resource_types','production_recipes','production_recipe_versions',
+      'employment_offers','tax_policies'
+    ) AND checked_command_type IS DISTINCT FROM 'InitializeWorldCommerceV1')
+    OR (TG_TABLE_NAME = 'business_facility_recipe_versions'
+      AND checked_command_type NOT IN (
+        'InitializeWorldCommerceV1','ConfigureBusinessFacilityV1'
+      ))
+    OR (TG_TABLE_NAME = 'inventory_movements' AND checked_command_type NOT IN (
+      'InitializeWorldCommerceV1','CompleteProductionRunV1','PurchaseMarketListingV1',
+      'RepairEconomicProjectionV1'
+    ))
+    OR (TG_TABLE_NAME = 'production_run_transitions' AND checked_command_type NOT IN (
+      'StartProductionRunV1','CompleteProductionRunV1','RepairEconomicProjectionV1'
+    ))
+    OR (TG_TABLE_NAME = 'work_records'
+      AND checked_command_type IS DISTINCT FROM 'PerformJobV1')
+    OR (TG_TABLE_NAME = 'market_trades'
+      AND checked_command_type IS DISTINCT FROM 'PurchaseMarketListingV1')
+    OR (TG_TABLE_NAME = 'tax_assessments' AND checked_command_type NOT IN (
+      'PurchaseMarketListingV1','SettlePayrollV1','AssessPeriodicTaxV1'
+    ))
+    OR (TG_TABLE_NAME = 'economy_expansion_reconciliation_runs'
+      AND checked_command_type NOT IN (
+        'ReconcileWorldCommerceV1','RepairEconomicProjectionV1'
+      )) THEN
+    RAISE EXCEPTION '% fact is outside its exact commerce command', TG_TABLE_NAME
+      USING ERRCODE = '55000';
+  END IF;
+  RETURN NEW;
+END
+$function$;
+--> statement-breakpoint
+REVOKE ALL ON FUNCTION public.worldgraph_protect_commerce_fact() FROM PUBLIC;
+--> statement-breakpoint
+CREATE OR REPLACE FUNCTION public.worldgraph_assert_economy_participant_history()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = pg_catalog, public
+AS $function$
+DECLARE
+  history_record record;
+  event_record record;
+  expected_category text;
+  expected_summary_code text;
+  expected_summary_args jsonb;
+  participant_binding_valid boolean;
+BEGIN
+  SELECT history.* INTO history_record
+  FROM public.economy_participant_history history
+  WHERE history.world_id = NEW.world_id
+    AND history.ledger_sequence = NEW.ledger_sequence
+    AND history.user_id = NEW.user_id;
+  IF NOT FOUND THEN RETURN NULL; END IF;
+
+  SELECT event.* INTO event_record
+  FROM public.command_records command
+  JOIN public.domain_events event
+    ON event.command_id = command.id AND event.world_id = command.world_id
+  JOIN public.ledger_entries entry
+    ON entry.world_id = event.world_id AND entry.event_id = event.id
+   AND entry.command_id = command.id
+   AND entry.entry_kind = CASE event.event_type
+     WHEN 'WorldEconomyRepairedV1' THEN 'repair_anchor'::ledger_entry_kind
+     ELSE 'domain_event'::ledger_entry_kind END
+  WHERE command.id = history_record.command_id
+    AND command.world_id = history_record.world_id
+    AND command.status = 'accepted'::command_record_status
+    AND command.resulting_state_revision = history_record.state_revision
+    AND event.id = history_record.event_id
+    AND event.resulting_state_revision = history_record.state_revision
+    AND entry.ledger_sequence = history_record.ledger_sequence;
+  IF NOT FOUND
+    OR history_record.visibility <> 'participant'::economy_participant_visibility
+    OR NOT public.worldgraph_user_controls_economy_entity_v1(
+      history_record.world_id,
+      history_record.user_id,
+      history_record.participant_entity_id
+    ) THEN
+    RAISE EXCEPTION 'participant history lacks its exact accepted event/controller binding'
+      USING ERRCODE = '55000';
+  END IF;
+
+  expected_category := CASE event_record.event_type
+    WHEN 'CurrencyTransferredV1' THEN 'currency'
+    WHEN 'WalletFrozenV1' THEN 'wallet'
+    WHEN 'WalletUnfrozenV1' THEN 'wallet'
+    WHEN 'AssetOwnershipTransferredV1' THEN 'asset'
+    WHEN 'AssetTransferOfferCreatedV1' THEN 'offer'
+    WHEN 'AssetTransferOfferCancelledV1' THEN 'offer'
+    WHEN 'AssetTransferOfferAcceptedV1' THEN 'offer'
+    WHEN 'AssetTransferOfferExpiredV1' THEN 'offer'
+    WHEN 'AssetPurchasedV1' THEN 'asset'
+    WHEN 'WorldEconomyRepairedV1' THEN 'repair'
+  END;
+  expected_summary_code := CASE event_record.event_type
+    WHEN 'CurrencyTransferredV1' THEN 'CURRENCY_TRANSFERRED'
+    WHEN 'WalletFrozenV1' THEN 'WALLET_FROZEN'
+    WHEN 'WalletUnfrozenV1' THEN 'WALLET_UNFROZEN'
+    WHEN 'AssetOwnershipTransferredV1' THEN 'ASSET_OWNERSHIP_TRANSFERRED'
+    WHEN 'AssetTransferOfferCreatedV1' THEN 'ASSET_TRANSFER_OFFER_CREATED'
+    WHEN 'AssetTransferOfferCancelledV1' THEN 'ASSET_TRANSFER_OFFER_CANCELLED'
+    WHEN 'AssetTransferOfferAcceptedV1' THEN 'ASSET_TRANSFER_OFFER_ACCEPTED'
+    WHEN 'AssetTransferOfferExpiredV1' THEN 'ASSET_TRANSFER_OFFER_EXPIRED'
+    WHEN 'AssetPurchasedV1' THEN 'ASSET_PURCHASED'
+    WHEN 'WorldEconomyRepairedV1' THEN 'WORLD_ECONOMY_REPAIRED'
+  END;
+  expected_summary_args := CASE event_record.event_type
+    WHEN 'CurrencyTransferredV1' THEN jsonb_build_object(
+      'transactionId', event_record.payload ->> 'transactionId')
+    WHEN 'WalletFrozenV1' THEN jsonb_build_object(
+      'walletVersion', event_record.payload ->> 'walletVersion')
+    WHEN 'WalletUnfrozenV1' THEN jsonb_build_object(
+      'walletVersion', event_record.payload ->> 'walletVersion')
+    WHEN 'AssetOwnershipTransferredV1' THEN jsonb_build_object(
+      'assetId', event_record.payload ->> 'assetId')
+    WHEN 'AssetTransferOfferCreatedV1' THEN jsonb_build_object(
+      'expiresAtTick', event_record.payload ->> 'expiresAtTick',
+      'offerId', event_record.payload ->> 'offerId')
+    WHEN 'AssetTransferOfferCancelledV1' THEN jsonb_build_object(
+      'offerId', event_record.payload ->> 'offerId',
+      'offerVersion', event_record.payload ->> 'offerVersion')
+    WHEN 'AssetTransferOfferAcceptedV1' THEN jsonb_build_object(
+      'offerId', event_record.payload ->> 'offerId',
+      'offerVersion', event_record.payload ->> 'offerVersion')
+    WHEN 'AssetTransferOfferExpiredV1' THEN jsonb_build_object(
+      'offerId', event_record.payload ->> 'offerId',
+      'offerVersion', event_record.payload ->> 'offerVersion',
+      'expiredAtTick', event_record.payload ->> 'expiredAtTick')
+    WHEN 'AssetPurchasedV1' THEN jsonb_build_object(
+      'assetId', event_record.payload ->> 'assetId',
+      'offerId', event_record.payload ->> 'offerId')
+    WHEN 'WorldEconomyRepairedV1' THEN jsonb_build_object(
+      'reasonCode', event_record.payload ->> 'reasonCode',
+      'repairKind', event_record.payload ->> 'repairKind')
+  END;
+
+  participant_binding_valid := CASE event_record.event_type
+    WHEN 'CurrencyTransferredV1' THEN EXISTS (
+      SELECT 1
+      FROM public.wallets source_wallet
+      JOIN public.wallets destination_wallet
+        ON destination_wallet.world_id = source_wallet.world_id
+       AND destination_wallet.currency_id = source_wallet.currency_id
+      WHERE source_wallet.world_id = history_record.world_id
+        AND source_wallet.id::text = event_record.payload ->> 'sourceWalletId'
+        AND destination_wallet.id::text = event_record.payload ->> 'destinationWalletId'
+        AND (
+          (history_record.participant_entity_id = source_wallet.owner_entity_id
+            AND history_record.counterparty_entity_id = destination_wallet.owner_entity_id)
+          OR
+          (history_record.participant_entity_id = destination_wallet.owner_entity_id
+            AND history_record.counterparty_entity_id = source_wallet.owner_entity_id)
+        )
+    )
+    WHEN 'WalletFrozenV1' THEN EXISTS (
+      SELECT 1 FROM public.wallets wallet
+      WHERE wallet.world_id = history_record.world_id
+        AND wallet.id::text = event_record.aggregate_id
+        AND history_record.participant_entity_id = wallet.owner_entity_id
+        AND history_record.counterparty_entity_id IS NULL
+    )
+    WHEN 'WalletUnfrozenV1' THEN EXISTS (
+      SELECT 1 FROM public.wallets wallet
+      WHERE wallet.world_id = history_record.world_id
+        AND wallet.id::text = event_record.aggregate_id
+        AND history_record.participant_entity_id = wallet.owner_entity_id
+        AND history_record.counterparty_entity_id IS NULL
+    )
+    WHEN 'AssetOwnershipTransferredV1' THEN EXISTS (
+      SELECT 1 FROM public.asset_transfers transfer
+      WHERE transfer.world_id = history_record.world_id
+        AND transfer.event_id = history_record.event_id
+        AND (
+          (history_record.participant_entity_id = transfer.from_owner_entity_id
+            AND history_record.counterparty_entity_id = transfer.to_owner_entity_id)
+          OR
+          (history_record.participant_entity_id = transfer.to_owner_entity_id
+            AND history_record.counterparty_entity_id = transfer.from_owner_entity_id)
+        )
+    )
+    WHEN 'AssetTransferOfferCreatedV1' THEN EXISTS (
+      SELECT 1 FROM public.asset_transfer_offers offer
+      WHERE offer.world_id = history_record.world_id
+        AND offer.created_event_id = history_record.event_id
+        AND (
+          (history_record.participant_entity_id = offer.seller_entity_id
+            AND history_record.counterparty_entity_id IS NOT DISTINCT FROM offer.buyer_entity_id)
+          OR (offer.buyer_entity_id IS NOT NULL
+            AND history_record.participant_entity_id = offer.buyer_entity_id
+            AND history_record.counterparty_entity_id = offer.seller_entity_id)
+        )
+    )
+    WHEN 'AssetTransferOfferCancelledV1' THEN EXISTS (
+      SELECT 1 FROM public.asset_transfer_offers offer
+      WHERE offer.world_id = history_record.world_id
+        AND offer.terminal_event_id = history_record.event_id
+        AND (
+          (history_record.participant_entity_id = offer.seller_entity_id
+            AND history_record.counterparty_entity_id IS NOT DISTINCT FROM offer.buyer_entity_id)
+          OR (offer.buyer_entity_id IS NOT NULL
+            AND history_record.participant_entity_id = offer.buyer_entity_id
+            AND history_record.counterparty_entity_id = offer.seller_entity_id)
+        )
+    )
+    WHEN 'AssetTransferOfferAcceptedV1' THEN EXISTS (
+      SELECT 1
+      FROM public.asset_transfer_offers offer
+      JOIN public.asset_transfers transfer
+        ON transfer.world_id = offer.world_id
+       AND transfer.id = offer.accepted_asset_transfer_id
+      WHERE offer.world_id = history_record.world_id
+        AND offer.terminal_event_id = history_record.event_id
+        AND (
+          (history_record.participant_entity_id = transfer.from_owner_entity_id
+            AND history_record.counterparty_entity_id = transfer.to_owner_entity_id)
+          OR
+          (history_record.participant_entity_id = transfer.to_owner_entity_id
+            AND history_record.counterparty_entity_id = transfer.from_owner_entity_id)
+        )
+    )
+    WHEN 'AssetTransferOfferExpiredV1' THEN EXISTS (
+      SELECT 1 FROM public.asset_transfer_offers offer
+      WHERE offer.world_id = history_record.world_id
+        AND offer.terminal_event_id = history_record.event_id
+        AND (
+          (history_record.participant_entity_id = offer.seller_entity_id
+            AND history_record.counterparty_entity_id IS NOT DISTINCT FROM offer.buyer_entity_id)
+          OR (offer.buyer_entity_id IS NOT NULL
+            AND history_record.participant_entity_id = offer.buyer_entity_id
+            AND history_record.counterparty_entity_id = offer.seller_entity_id)
+        )
+    )
+    WHEN 'AssetPurchasedV1' THEN EXISTS (
+      SELECT 1
+      FROM public.asset_transfer_offers offer
+      JOIN public.asset_transfers transfer
+        ON transfer.world_id = offer.world_id
+       AND transfer.id = offer.accepted_asset_transfer_id
+      WHERE offer.world_id = history_record.world_id
+        AND offer.terminal_command_id = history_record.command_id
+        AND (
+          (history_record.participant_entity_id = transfer.from_owner_entity_id
+            AND history_record.counterparty_entity_id = transfer.to_owner_entity_id)
+          OR
+          (history_record.participant_entity_id = transfer.to_owner_entity_id
+            AND history_record.counterparty_entity_id = transfer.from_owner_entity_id)
+        )
+    )
+    WHEN 'WorldEconomyRepairedV1' THEN EXISTS (
+      WITH affected_entities AS (
+        SELECT wallet.owner_entity_id AS entity_id
+        FROM public.economy_repair_executions execution
+        JOIN public.economy_repair_plans plan
+          ON plan.id = execution.repair_plan_id AND plan.world_id = execution.world_id
+        JOIN public.wallet_postings posting
+          ON posting.transaction_id = plan.source_financial_transaction_id
+        JOIN public.wallets wallet
+          ON wallet.world_id = posting.world_id
+         AND wallet.currency_id = posting.currency_id
+         AND wallet.id = posting.wallet_id
+        WHERE execution.event_id = history_record.event_id
+          AND execution.world_id = history_record.world_id
+        UNION
+        SELECT source.from_owner_entity_id
+        FROM public.economy_repair_executions execution
+        JOIN public.economy_repair_plans plan
+          ON plan.id = execution.repair_plan_id AND plan.world_id = execution.world_id
+        JOIN public.asset_transfers source
+          ON source.world_id = plan.world_id AND source.id = plan.source_asset_transfer_id
+        WHERE execution.event_id = history_record.event_id
+          AND execution.world_id = history_record.world_id
+        UNION
+        SELECT source.to_owner_entity_id
+        FROM public.economy_repair_executions execution
+        JOIN public.economy_repair_plans plan
+          ON plan.id = execution.repair_plan_id AND plan.world_id = execution.world_id
+        JOIN public.asset_transfers source
+          ON source.world_id = plan.world_id AND source.id = plan.source_asset_transfer_id
+        WHERE execution.event_id = history_record.event_id
+          AND execution.world_id = history_record.world_id
+      )
+      SELECT 1
+      FROM affected_entities participant
+      WHERE participant.entity_id = history_record.participant_entity_id
+        AND history_record.counterparty_entity_id IS NULL
+    )
+    ELSE false
+  END;
+  IF expected_category IS NULL
+    OR history_record.category IS DISTINCT FROM expected_category
+    OR history_record.summary_code IS DISTINCT FROM expected_summary_code
+    OR history_record.summary_args IS DISTINCT FROM expected_summary_args
+    OR participant_binding_valid IS NOT TRUE THEN
+    RAISE EXCEPTION 'participant history is not the exact redacted event participant view'
+      USING ERRCODE = '55000';
+  END IF;
+  RETURN NULL;
+END
+$function$;
+--> statement-breakpoint
+REVOKE ALL ON FUNCTION public.worldgraph_assert_economy_participant_history() FROM PUBLIC;
+--> statement-breakpoint
+CREATE OR REPLACE FUNCTION public.worldgraph_protect_commerce_projection_repair_evidence()
+RETURNS trigger
+LANGUAGE plpgsql
+SET search_path = pg_catalog, public
+AS $function$
+DECLARE
+  row_value jsonb := to_jsonb(NEW);
+  checked_plan_id uuid;
+BEGIN
+  IF TG_OP <> 'INSERT' THEN
+    RAISE EXCEPTION '% rows are append-only', TG_TABLE_NAME USING ERRCODE = '55000';
+  END IF;
+  checked_plan_id := CASE TG_TABLE_NAME
+    WHEN 'commerce_projection_repair_plans' THEN (row_value ->> 'id')::uuid
+    ELSE (row_value ->> 'repair_plan_id')::uuid
+  END;
+  IF NULLIF(current_setting('worldgraph.commerce_projection_repair_plan_id', true), '')
+      IS DISTINCT FROM checked_plan_id::text THEN
+    RAISE EXCEPTION '% insert requires its exact owner repair workflow', TG_TABLE_NAME
+      USING ERRCODE = '55000';
+  END IF;
+  RETURN NEW;
+END
+$function$;
+--> statement-breakpoint
+REVOKE ALL ON FUNCTION public.worldgraph_protect_commerce_projection_repair_evidence()
+  FROM PUBLIC;
+--> statement-breakpoint
 ALTER TABLE public.economy_expansion_reconciliation_items
   DROP CONSTRAINT economy_expansion_reconciliation_items_kind,
   ADD CONSTRAINT economy_expansion_reconciliation_items_kind CHECK (
@@ -295,10 +652,15 @@ ALTER TABLE public.economy_expansion_reconciliation_items
 CREATE INDEX financial_transactions_commerce_timeline_idx
   ON public.financial_transactions
     (world_id, occurred_tick DESC, created_at DESC, id DESC)
-  WHERE transaction_kind IN (
-    'market_purchase'::financial_transaction_kind,
-    'payroll'::financial_transaction_kind,
-    'periodic_tax'::financial_transaction_kind
+  -- PostgreSQL cannot use enum values added earlier in this transaction. These
+  -- are every sealed-M08 non-commerce kind; replace this predicate before adding
+  -- any future non-commerce transaction kind.
+  WHERE transaction_kind NOT IN (
+    'initialization'::financial_transaction_kind,
+    'issuance'::financial_transaction_kind,
+    'transfer'::financial_transaction_kind,
+    'asset_purchase'::financial_transaction_kind,
+    'compensation'::financial_transaction_kind
   );
 --> statement-breakpoint
 CREATE INDEX tax_assessments_world_cursor_idx
@@ -825,7 +1187,7 @@ BEGIN
         ON transaction.world_id = trade.world_id
        AND transaction.id = trade.wallet_transaction_id
        AND transaction.command_id = trade.command_id
-       AND transaction.transaction_kind = 'market_purchase'
+       AND transaction.transaction_kind::text = 'market_purchase'
       WHERE trade.world_id = checked_world_id
         AND trade.command_id = checked_command_id;
       IF evidence_count <> 1 THEN
@@ -889,7 +1251,7 @@ BEGIN
         ON transaction.world_id = trade.world_id
        AND transaction.id = trade.wallet_transaction_id
        AND transaction.command_id = trade.command_id
-       AND transaction.transaction_kind = 'market_purchase'
+       AND transaction.transaction_kind::text = 'market_purchase'
        AND transaction.currency_id = trade.currency_id
        AND transaction.state_revision = trade.state_revision
        AND transaction.occurred_tick = trade.occurred_tick
@@ -3219,7 +3581,7 @@ trade_rebuilt_rows AS (
    AND transaction.id =
      (command_fact.authority ->> 'walletTransactionId')::uuid
    AND transaction.command_id = event.command_id
-   AND transaction.transaction_kind = 'market_purchase'
+   AND transaction.transaction_kind::text = 'market_purchase'
   WHERE event.world_id = checked_world_id
     AND event.aggregate_type = 'market_trade'
     AND event.event_type = 'MarketTradeCompletedV1'
@@ -4269,11 +4631,11 @@ BEGIN
       (snapshot ->> 'mismatchCount')::integer
     OR run_record.mismatch_count IS DISTINCT FROM item_count
     OR item_count IS DISTINCT FROM (snapshot ->> 'itemCount')::integer
-    OR run_record.status IS DISTINCT FROM CASE
+    OR run_record.status IS DISTINCT FROM (CASE
       WHEN (snapshot ->> 'matched')::boolean
         THEN 'matched'::economy_reconciliation_run_status
       ELSE 'mismatch'::economy_reconciliation_run_status
-    END
+    END)
     OR EXISTS (
       WITH expected_items AS (
         SELECT expected."itemOrdinal" AS item_ordinal,
@@ -4310,11 +4672,11 @@ BEGIN
     OR head_record.last_reconciliation_run_id IS DISTINCT FROM run_record.id
     OR head_record.last_reconciled_state_revision
       IS DISTINCT FROM run_record.source_state_revision
-    OR head_record.reconciliation_status IS DISTINCT FROM CASE run_record.status
+    OR head_record.reconciliation_status IS DISTINCT FROM (CASE run_record.status
       WHEN 'matched'::economy_reconciliation_run_status
         THEN 'current'::economy_reconciliation_status
       ELSE 'mismatch'::economy_reconciliation_status
-    END
+    END)
     OR head_record.checksum IS DISTINCT FROM
       public.worldgraph_economy_expansion_projection_checksum(run_record.world_id)
     OR checkpoint_record.projection_schema_version <> 1

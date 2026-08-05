@@ -1,0 +1,175 @@
+groups:
+  - name: worldgraph-governance-v1
+    rules:
+      - alert: WorldGraphGovernanceTallyChecksumMismatch
+        expr: sum(increase(worldgraph_governance_tally_checksum_mismatches_total[5m])) > 0
+        for: 1m
+        labels:
+          metric_source: governance_worker_otlp
+          severity: critical
+        annotations:
+          summary: A deterministic governance tally checksum did not match
+          runbook: docs/operations.md#deterministic-recount-or-tally-mismatch
+          source: Governance worker OTLP metric worldgraph_governance_tally_checksum_mismatches_total
+
+      - alert: WorldGraphGovernanceSchedulerLag
+        expr: |
+          histogram_quantile(
+            0.95,
+            sum by (le, action_type) (
+              rate(worldgraph_governance_scheduler_lag_ticks_bucket[10m])
+            )
+          ) > 2
+          and
+          sum(increase(worldgraph_governance_scheduler_lag_ticks_count[10m])) >= 5
+        for: 10m
+        labels:
+          metric_source: governance_worker_otlp
+          severity: warning
+        annotations:
+          summary: Governance schedule execution is more than two world ticks late
+          runbook: docs/operations.md#stuck-proposal-or-election
+          source: Governance worker OTLP metric worldgraph_governance_scheduler_lag_ticks
+
+      - alert: WorldGraphGovernanceScheduledCommandFailures
+        expr: sum(increase(worldgraph_governance_scheduled_commands_total{outcome="failed"}[10m])) > 3
+        for: 5m
+        labels:
+          metric_source: governance_worker_otlp
+          severity: warning
+        annotations:
+          summary: Governance scheduled commands are repeatedly failing
+          runbook: docs/operations.md#stuck-proposal-or-election
+          source: Governance worker OTLP metric worldgraph_governance_scheduled_commands_total
+
+      - alert: WorldGraphGovernanceSchedulerSweepFailures
+        expr: sum(increase(worldgraph_governance_scheduler_sweeps_total{outcome="failed"}[10m])) > 3
+        for: 5m
+        labels:
+          metric_source: governance_worker_otlp
+          severity: warning
+        annotations:
+          summary: Governance PostgreSQL reconciliation sweeps are repeatedly failing
+          runbook: docs/operations.md#stuck-proposal-or-election
+          source: Governance worker OTLP metric worldgraph_governance_scheduler_sweeps_total
+
+      - alert: WorldGraphGovernanceTallySlow
+        expr: |
+          histogram_quantile(
+            0.95,
+            sum by (le, command_type) (
+              rate(worldgraph_governance_tally_duration_ms_bucket[10m])
+            )
+          ) > 2000
+          and
+          sum(increase(worldgraph_governance_tally_duration_ms_count[10m])) >= 5
+        for: 10m
+        labels:
+          metric_source: governance_worker_otlp
+          severity: warning
+        annotations:
+          summary: Governance tally p95 exceeds two seconds
+          runbook: docs/operations.md#deterministic-recount-or-tally-mismatch
+          source: Governance worker OTLP metric worldgraph_governance_tally_duration_ms
+
+      - alert: WorldGraphGovernanceEnactmentFailure
+        expr: sum(increase(worldgraph_governance_enactment_failures_total[10m])) > 0
+        for: 1m
+        labels:
+          metric_source: governance_command_otlp
+          severity: warning
+        annotations:
+          summary: A passed proposal could not atomically enact its typed effects
+          runbook: docs/operations.md#passed-proposal-with-failed-enactment
+          source: Governance command OTLP metric worldgraph_governance_enactment_failures_total
+
+      - alert: WorldGraphGovernanceOverrideUsed
+        expr: sum(increase(worldgraph_governance_overrides_total{outcome="accepted"}[5m])) > 0
+        for: 1m
+        labels:
+          metric_source: governance_command_otlp
+          severity: warning
+        annotations:
+          summary: An explicit creator or administrator governance override committed
+          runbook: docs/operations.md#explicit-override-or-repair-alert
+          source: Governance API OTLP metric worldgraph_governance_overrides_total
+
+      - alert: WorldGraphGovernanceRepairUsed
+        expr: sum(increase(worldgraph_governance_repairs_total{outcome="accepted"}[5m])) > 0
+        for: 1m
+        labels:
+          metric_source: governance_command_otlp
+          severity: warning
+        annotations:
+          summary: A linked governance repair committed
+          runbook: docs/operations.md#explicit-override-or-repair-alert
+          source: Governance API OTLP metric worldgraph_governance_repairs_total
+
+      - alert: WorldGraphGovernanceAuthorityDenialBurst
+        expr: sum(increase(worldgraph_governance_authority_denies_total[10m])) > 100
+        for: 5m
+        labels:
+          metric_source: governance_command_otlp
+          severity: warning
+        annotations:
+          summary: Governance authority denials are elevated
+          runbook: docs/operations.md#governance-controls-and-incidents
+          source: Governance API OTLP metric worldgraph_governance_authority_denies_total
+
+      - alert: WorldGraphGovernanceDuplicateBallotBurst
+        expr: |
+          sum(increase(worldgraph_governance_ballot_rejections_total{
+            rejection_code=~"BALLOT_ALREADY_CAST|BALLOT_REPLACEMENT_NOT_ALLOWED"
+          }[10m])) > 50
+        for: 5m
+        labels:
+          metric_source: governance_command_otlp
+          severity: warning
+        annotations:
+          summary: Duplicate or forbidden replacement ballot attempts are elevated
+          runbook: docs/operations.md#governance-controls-and-incidents
+          source: Governance API OTLP metric worldgraph_governance_ballot_rejections_total
+
+      - alert: WorldGraphGovernanceContestStuck
+        expr: max(worldgraph_governance_open_contests_stuck) > 0
+        for: 10m
+        labels:
+          metric_source: postgresql_reconciliation_exporter
+          severity: warning
+        annotations:
+          summary: A governance contest remains open after its authoritative close tick
+          runbook: docs/operations.md#stuck-proposal-or-election
+          source: External read-only PostgreSQL reconciliation exporter; not emitted by the worker
+
+      - alert: WorldGraphGovernancePassedProposalUnenacted
+        expr: max(worldgraph_governance_passed_unenacted_proposals) > 0
+        for: 5m
+        labels:
+          metric_source: postgresql_reconciliation_exporter
+          severity: warning
+        annotations:
+          summary: A passed proposal is waiting for audited enactment recovery
+          runbook: docs/operations.md#passed-proposal-with-failed-enactment
+          source: External read-only PostgreSQL reconciliation exporter; not emitted by the worker
+
+      - alert: WorldGraphGovernanceTermTransitionFailure
+        expr: max(worldgraph_governance_office_transition_failures) > 0
+        for: 1m
+        labels:
+          metric_source: postgresql_reconciliation_exporter
+          severity: critical
+        annotations:
+          summary: An office result and exact-tick authority interval disagree
+          runbook: docs/operations.md#office-vacancy-or-transition-failure
+          source: External read-only PostgreSQL reconciliation exporter; not emitted by the worker
+
+      - alert: WorldGraphGovernanceUnexpectedSecretAccess
+        expr: sum(increase(worldgraph_governance_unexpected_secret_access_total[5m])) > 0
+        for: 1m
+        labels:
+          metric_source: database_audit_exporter
+          severity: critical
+        annotations:
+          summary: Unexpected access to restricted governance ballot data was observed
+          runbook: docs/operations.md#secret-ballot-credential-key-or-backup-exposure
+          source: Deployment-owned database audit exporter; not emitted by the application

@@ -2,6 +2,7 @@ import { Type, type Static } from '@sinclair/typebox';
 
 import { PrimitiveKindSchema, StablePrimitiveKeySchema, StrictSemverSchema } from './catalog.js';
 import type { JsonValue } from './canonical-json.js';
+import { GOVERNANCE_SEED_PLAN_SCHEMA_VERSION, GovernanceSeedPlanV1Schema } from './governance.js';
 import {
   MANIFEST_GENERATOR_SCHEMA_VERSION,
   MANIFEST_PROMPT_TEMPLATE_VERSION,
@@ -179,15 +180,6 @@ export const ManifestRelationshipV1Schema = Type.Object(
   },
   { additionalProperties: false },
 );
-
-export const ManifestExtensionsV1Schema = Type.Unsafe<Record<string, JsonValue>>({
-  additionalProperties: false,
-  maxProperties: 16,
-  patternProperties: {
-    '^[a-z][a-z0-9-]*(?:\\.[a-z0-9][a-z0-9-]*)+$': ManifestJsonValueSchema,
-  },
-  type: 'object',
-});
 
 export const ManifestEconomyStableKeySchema = Type.String({
   maxLength: 240,
@@ -401,6 +393,34 @@ export const WorldgraphEconomyExtensionV2Schema = Type.Object(
   { $id: 'WorldgraphEconomyExtensionV2', additionalProperties: false },
 );
 
+/** Typed, data-only M10 charter intent carried by Manifest V1 extensions. */
+export const WorldgraphGovernanceExtensionV1Schema = Type.Object(
+  {
+    charter: GovernanceSeedPlanV1Schema.properties.charter,
+    electionPrimitiveRef: ManifestLocalKeySchema,
+    initialLaws: GovernanceSeedPlanV1Schema.properties.initialLaws,
+    institutions: GovernanceSeedPlanV1Schema.properties.institutions,
+    offices: GovernanceSeedPlanV1Schema.properties.offices,
+    schemaVersion: Type.Literal(GOVERNANCE_SEED_PLAN_SCHEMA_VERSION),
+  },
+  { $id: 'WorldgraphGovernanceExtensionV1', additionalProperties: false },
+);
+
+export const ManifestExtensionsV1Schema = Type.Unsafe<Record<string, JsonValue>>({
+  additionalProperties: false,
+  maxProperties: 16,
+  patternProperties: {
+    '^(?!worldgraph\\.governance$)[a-z][a-z0-9-]*(?:\\.[a-z0-9][a-z0-9-]*)+$':
+      ManifestJsonValueSchema,
+  },
+  properties: {
+    // The bounded, closed governance extension is compiled independently so
+    // its finite policy AST does not inflate every Manifest V1 validator.
+    'worldgraph.governance': Type.Unknown(),
+  },
+  type: 'object',
+});
+
 export const WorldManifestV1Schema = Type.Object(
   {
     actors: Type.Array(ManifestActorV1Schema, { maxItems: 64 }),
@@ -566,7 +586,7 @@ export const ManifestGenerationEnvelopeV1Schema = Type.Object(
     generatorSchemaVersion: Type.Literal(MANIFEST_GENERATOR_SCHEMA_VERSION),
     manifest: WorldManifestV1Schema,
     promptTemplateVersion: Type.Literal(MANIFEST_PROMPT_TEMPLATE_VERSION),
-    provenance: Type.Array(ManifestFieldProvenanceSchema, { maxItems: 512 }),
+    provenance: Type.Array(ManifestFieldProvenanceSchema, { maxItems: 1_024 }),
     suggestedFixes: Type.Array(ManifestSuggestedFixSchema, { maxItems: 32 }),
     unresolvedQuestions: Type.Array(ManifestBoundedTextSchema, { maxItems: 32, uniqueItems: true }),
     warnings: Type.Array(ManifestGenerationWarningSchema, {
@@ -798,7 +818,7 @@ export const ManifestRevisionListResponseSchema = Type.Object(
 
 export const ManifestProvenanceViewSchema = Type.Object(
   {
-    entries: Type.Array(ManifestFieldProvenanceSchema, { maxItems: 512 }),
+    entries: Type.Array(ManifestFieldProvenanceSchema, { maxItems: 1_024 }),
     manifestRevisionId: ManifestUuidSchema,
   },
   { additionalProperties: false },
@@ -914,6 +934,7 @@ export const ManifestGenerationRequestedSchema = Type.Object(
 
 export type ManifestPrimitiveReferenceV1 = Static<typeof ManifestPrimitiveReferenceV1Schema>;
 export type WorldgraphEconomyExtensionV2 = Static<typeof WorldgraphEconomyExtensionV2Schema>;
+export type WorldgraphGovernanceExtensionV1 = Static<typeof WorldgraphGovernanceExtensionV1Schema>;
 export type WorldManifestV1 = Static<typeof WorldManifestV1Schema>;
 export type ManifestSuggestedFix = Static<typeof ManifestSuggestedFixSchema>;
 export type ManifestDiagnostic = Static<typeof ManifestDiagnosticSchema>;

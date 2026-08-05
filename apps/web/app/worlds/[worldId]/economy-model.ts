@@ -39,7 +39,7 @@ export interface EconomySummary {
   seedPlan: {
     available: boolean;
     hash: string | null;
-    sourceKind: 'compiler_1_1' | 'legacy_adapter' | null;
+    sourceKind: 'compiler_1_1' | 'compiler_1_2' | 'legacy_adapter' | null;
   };
   stateRevision: string;
   status: 'mismatched' | 'not_initialized' | 'ready' | 'reconciling';

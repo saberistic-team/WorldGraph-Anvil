@@ -32,12 +32,14 @@ import {
   type WorldProjectionV1,
 } from '@worldgraph/ledger';
 
+import { observeDatabasePoolErrors } from '../index.js';
 import {
   assertOperatorCommerceProjectionRepairPlan,
   COMMERCE_PROJECTION_REPAIR_APPROVAL_CONFIRMATION,
   COMMERCE_PROJECTION_REPAIR_EXECUTION_CONFIRMATION,
   validateCommerceProjectionRepairReason,
 } from './commerce-projection-repair.js';
+import { operatorFailureMessage } from './operator-errors.js';
 
 const { Pool } = pg;
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
@@ -53,6 +55,7 @@ const ECONOMY_REPAIR_REASON_CODES = new Set([
 const eventValidator: Validator<DomainEventEnvelopeV1> = createValidator<DomainEventEnvelopeV1>(
   DomainEventEnvelopeV1Schema,
 );
+let databaseConnectionInterrupted = false;
 const entryValidator: Validator<LedgerEntryV1> =
   createValidator<LedgerEntryV1>(LedgerEntryV1Schema);
 const economyRepairPlanValidator: Validator<EconomyRepairPlanV1> =
@@ -226,6 +229,15 @@ function connectionString(requireOperations = false): string {
 
 function fail(message: string): never {
   throw new Error(message);
+}
+
+function reportDatabaseConnectionError(
+  code: 'DATABASE_CHECKED_OUT_CLIENT_ERROR' | 'DATABASE_IDLE_CLIENT_ERROR',
+): void {
+  databaseConnectionInterrupted = true;
+  process.stderr.write(
+    `${JSON.stringify({ code, message: 'The operator database connection was interrupted.' })}\n`,
+  );
 }
 
 function bufferHash(value: Buffer | null): string | null {
@@ -1416,6 +1428,14 @@ async function main(): Promise<void> {
     query_timeout: 60_000,
     statement_timeout: 60_000,
   });
+  const stopObservingDatabaseErrors = observeDatabasePoolErrors(pool, {
+    onCheckedOutClientError: () => {
+      reportDatabaseConnectionError('DATABASE_CHECKED_OUT_CLIENT_ERROR');
+    },
+    onIdleClientError: () => {
+      reportDatabaseConnectionError('DATABASE_IDLE_CLIENT_ERROR');
+    },
+  });
   try {
     if (args.scope === 'ledger' && args.operation === 'verify')
       return await verify(pool, checkedWorldId);
@@ -1443,12 +1463,16 @@ async function main(): Promise<void> {
       'Usage: ledger verify|export, outbox retry, projection replay|compare|repair-swap, or economy repair-prepare|repair-execute|projection-repair-prepare|projection-repair-approve|projection-repair-execute.',
     );
   } finally {
-    await pool.end();
+    try {
+      await pool.end();
+    } finally {
+      stopObservingDatabaseErrors();
+    }
   }
 }
 
 await main().catch((error: unknown) => {
-  const message = error instanceof Error ? error.message : 'Operator command failed.';
+  const message = operatorFailureMessage(error, databaseConnectionInterrupted);
   process.stderr.write(`${JSON.stringify({ code: 'OPERATOR_COMMAND_FAILED', message })}\n`);
   process.exitCode = 1;
 });

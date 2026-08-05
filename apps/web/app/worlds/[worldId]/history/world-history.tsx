@@ -198,6 +198,9 @@ export function WorldHistory({ worldId }: { worldId: string }) {
           <Link className="text-link" href={`/worlds/${worldId}/economy`}>
             Economy
           </Link>
+          <Link className="text-link" href={`/worlds/${worldId}/govern`}>
+            Govern
+          </Link>
           <Link className="text-link" href={`/worlds/${worldId}/assets`}>
             Assets
           </Link>

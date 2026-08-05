@@ -6,6 +6,10 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { RuntimeConfig } from '@worldgraph/config';
 import { SystemClock, UuidV7Generator, type ApplicationNotification } from '@worldgraph/contracts';
 import { applyMigrations, createDatabaseClient, type DatabaseClient } from '@worldgraph/db';
+import {
+  governanceRecentCredentialCommandHashV1,
+  governanceTwoPersonApprovalBindingHashV1,
+} from '@worldgraph/governance-command';
 import { createLogger } from '@worldgraph/observability';
 
 import { buildApp } from './app.js';
@@ -150,6 +154,99 @@ describe('identity, membership, and authority API', () => {
     expect(create.statusCode).toBe(201);
     const world = create.json<{ world: { id: string; rowVersion: number } }>().world;
 
+    const reviewedRepair = {
+      commandId: '018f8652-3cb6-7d52-904b-cce7901d7e70',
+      expectedAggregateVersion: '0',
+      expectedStateRevision: '0',
+      expectedTick: '0',
+      expectedWorldVersion: '1',
+      idempotencyKey: 'identity-step-up-repair-0001',
+      payload: {
+        approvalId: null,
+        confirmation: 'APPEND LINKED GOVERNANCE REPAIR',
+        expectedCurrentResultChecksum: 'a'.repeat(64),
+        reason: 'Recompute frozen ballots and append linked evidence.',
+        repairKind: 'proposal_recount',
+        replacementResultChecksum: 'b'.repeat(64),
+        sourceResultId: '018f8652-3cb6-7d52-904b-cce7901d7e71',
+      },
+      schemaVersion: 1,
+      type: 'RepairGovernanceResultV1',
+    } as const;
+    const reauthenticationPayload = { command: reviewedRepair, password, worldId: world.id };
+    const wrongOriginReauthentication = await app.inject({
+      headers: { ...mutationHeaders(alice, 'step-up-wrong-origin'), origin: 'https://evil.test' },
+      method: 'POST',
+      payload: reauthenticationPayload,
+      url: '/api/v1/auth/reauthenticate',
+    });
+    expect(wrongOriginReauthentication.statusCode).toBe(403);
+    expect(wrongOriginReauthentication.json()).toMatchObject({ error: { code: 'CSRF_INVALID' } });
+    const missingCsrfReauthentication = await app.inject({
+      headers: { cookie: alice.cookie, origin },
+      method: 'POST',
+      payload: reauthenticationPayload,
+      url: '/api/v1/auth/reauthenticate',
+    });
+    expect(missingCsrfReauthentication.statusCode).toBe(403);
+    expect(missingCsrfReauthentication.json()).toMatchObject({
+      error: { code: 'CSRF_INVALID' },
+    });
+    const wrongPasswordReauthentication = await app.inject({
+      headers: mutationHeaders(alice, 'step-up-wrong-password'),
+      method: 'POST',
+      payload: { ...reauthenticationPayload, password: 'This password is incorrect' },
+      url: '/api/v1/auth/reauthenticate',
+    });
+    expect(wrongPasswordReauthentication.statusCode).toBe(401);
+    expect(wrongPasswordReauthentication.json()).toMatchObject({
+      error: { code: 'REAUTHENTICATION_FAILED' },
+    });
+    const reauthentication = await app.inject({
+      headers: mutationHeaders(alice, 'step-up-success'),
+      method: 'POST',
+      payload: reauthenticationPayload,
+      url: '/api/v1/auth/reauthenticate',
+    });
+    expect(reauthentication.statusCode, reauthentication.body).toBe(200);
+    const issuedProof = reauthentication.json<{ expiresAt: string; proofToken: string }>();
+    expect(issuedProof.proofToken).toHaveLength(43);
+    const proofRecord = await client.pool.query<{
+      command_request_hash: Buffer;
+      proof_hash: Buffer;
+    }>(
+      `select proof_hash,command_request_hash
+         from recent_credential_proofs where command_id=$1`,
+      [reviewedRepair.commandId],
+    );
+    expect(proofRecord.rows[0]?.proof_hash).toHaveLength(32);
+    expect(proofRecord.rows[0]?.command_request_hash).toEqual(
+      governanceRecentCredentialCommandHashV1({ ...reviewedRepair, actorMode: 'creator' }),
+    );
+    expect(proofRecord.rows[0]?.proof_hash.toString('utf8')).not.toContain(issuedProof.proofToken);
+    const stepUpAudit = await client.pool.query<{ redacted_metadata: Record<string, unknown> }>(
+      `select redacted_metadata from security_audit_records
+        where action='identity.reauthenticate' and outcome='allowed' and actor_user_id=$1`,
+      [alice.userId],
+    );
+    expect(JSON.stringify(stepUpAudit.rows)).not.toContain(password);
+
+    const rateLimitedStatuses: number[] = [];
+    for (let attempt = 0; attempt < 6; attempt += 1) {
+      rateLimitedStatuses.push(
+        (
+          await app.inject({
+            headers: mutationHeaders(charlie, `step-up-rate-${attempt}`),
+            method: 'POST',
+            payload: { ...reauthenticationPayload, password: 'This password is incorrect' },
+            url: '/api/v1/auth/reauthenticate',
+          })
+        ).statusCode,
+      );
+    }
+    expect(rateLimitedStatuses.slice(0, 5)).toEqual([401, 401, 401, 401, 401]);
+    expect(rateLimitedStatuses[5]).toBe(429);
+
     const replay = await app.inject({
       headers: createHeaders,
       method: 'POST',
@@ -246,6 +343,40 @@ describe('identity, membership, and authority API', () => {
     expect(bobMembership.role).toBe('player');
     expect(members.body).not.toContain('bob@example.test');
 
+    const approvalReview = { ...reviewedRepair, actorMode: 'creator' } as const;
+    const approvalPayload = { command: approvalReview, password, worldId: world.id };
+    const wrongOriginApproval = await app.inject({
+      headers: {
+        ...mutationHeaders(bob, 'governance-approval-origin'),
+        origin: 'https://evil.test',
+      },
+      method: 'POST',
+      payload: approvalPayload,
+      url: '/api/v1/auth/governance-approval',
+    });
+    expect(wrongOriginApproval.statusCode).toBe(403);
+    const missingCsrfApproval = await app.inject({
+      headers: {
+        cookie: bob.cookie,
+        'idempotency-key': 'governance-approval-csrf',
+        origin,
+      },
+      method: 'POST',
+      payload: approvalPayload,
+      url: '/api/v1/auth/governance-approval',
+    });
+    expect(missingCsrfApproval.statusCode).toBe(403);
+    const unauthorizedApproval = await app.inject({
+      headers: mutationHeaders(bob, 'governance-approval-player'),
+      method: 'POST',
+      payload: approvalPayload,
+      url: '/api/v1/auth/governance-approval',
+    });
+    expect(unauthorizedApproval.statusCode).toBe(403);
+    expect(unauthorizedApproval.json()).toMatchObject({
+      error: { code: 'AUTHORIZATION_DENIED' },
+    });
+
     const promoted = await app.inject({
       headers: mutationHeaders(alice, 'promote-bob-001'),
       method: 'PATCH',
@@ -255,6 +386,53 @@ describe('identity, membership, and authority API', () => {
     expect(promoted.statusCode).toBe(200);
     const promotedVersion = promoted.json<{ membership: { rowVersion: number } }>().membership
       .rowVersion;
+
+    const approvalHeaders = mutationHeaders(bob, 'governance-approval-success');
+    const approval = await app.inject({
+      headers: approvalHeaders,
+      method: 'POST',
+      payload: approvalPayload,
+      url: '/api/v1/auth/governance-approval',
+    });
+    expect(approval.statusCode, approval.body).toBe(200);
+    const issuedApproval = approval.json<{
+      approvalId: string;
+      commandId: string;
+      expiresAt: string;
+    }>();
+    expect(issuedApproval.commandId).toBe(reviewedRepair.commandId);
+    expect(new Date(issuedApproval.expiresAt).getTime()).toBeGreaterThan(Date.now());
+    const approvalReplay = await app.inject({
+      headers: approvalHeaders,
+      method: 'POST',
+      payload: approvalPayload,
+      url: '/api/v1/auth/governance-approval',
+    });
+    expect(approvalReplay.statusCode).toBe(200);
+    expect(approvalReplay.json()).toEqual(issuedApproval);
+    const approvalAudit = await client.pool.query<{
+      count: string;
+      redacted_metadata: Record<string, unknown>;
+    }>(
+      `select count(*) over ()::text as count,redacted_metadata
+         from security_audit_records
+        where action='governance.approve_repair' and outcome='allowed'
+          and actor_user_id=$1 and target_id=$2`,
+      [bob.userId, reviewedRepair.commandId],
+    );
+    expect(approvalAudit.rows[0]?.count).toBe('1');
+    expect(approvalAudit.rows[0]?.redacted_metadata).toMatchObject({
+      approvalExpiresAt: issuedApproval.expiresAt,
+      bindingHash: governanceTwoPersonApprovalBindingHashV1(approvalReview),
+      commandType: 'RepairGovernanceResultV1',
+    });
+    const approvalRateLimit = await app.inject({
+      headers: mutationHeaders(bob, 'governance-approval-rate-limit'),
+      method: 'POST',
+      payload: approvalPayload,
+      url: '/api/v1/auth/governance-approval',
+    });
+    expect(approvalRateLimit.statusCode).toBe(429);
 
     const adminInvite = await app.inject({
       headers: mutationHeaders(bob, 'admin-invite-001'),

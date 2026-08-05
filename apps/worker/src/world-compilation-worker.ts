@@ -1,8 +1,10 @@
 import {
   compilePreviousArtifactForCompatibility,
+  compileRetainedArtifactForCompatibility,
   compileWorld,
   createCompilerInputBundle,
   createPreviousCompilerInputBundle,
+  createRetainedCompilerInputBundle,
   memberPrincipalKey,
   verifyCompiledArtifact,
 } from '@worldgraph/compiler';
@@ -11,6 +13,7 @@ import {
   COMPILER_CONFIG_SCHEMA_VERSION,
   COMPILER_VERSION,
   PREVIOUS_COMPILER_VERSION,
+  RETAINED_COMPILER_VERSION,
   SystemClock,
   UuidV7Generator,
   createValidator,
@@ -20,6 +23,7 @@ import {
   type CompilerInputBundleV1,
   type IdGenerator,
   type PreviousCompilerInputBundleV1,
+  type RetainedCompilerInputBundleV1,
   type Validator,
 } from '@worldgraph/contracts';
 import { telemetry, withSpan } from '@worldgraph/observability';
@@ -48,7 +52,8 @@ export interface WorldCompilationRunResult {
   worldVersionId?: string;
 }
 
-type ExecutableCompilerInputBundle = CompilerInputBundleV1 | PreviousCompilerInputBundleV1;
+type ExecutableCompilerInputBundle =
+  CompilerInputBundleV1 | PreviousCompilerInputBundleV1 | RetainedCompilerInputBundleV1;
 
 export interface WorldCompilationMetrics {
   recordArtifact(entities: number, relationships: number): void;
@@ -162,14 +167,25 @@ function hasHashMismatch(diagnostics: readonly CompilerDiagnosticV1[]): boolean 
   );
 }
 
-function requiresCurrentCompiler(manifest: WorldCompilationSource['manifest']): boolean {
-  const extension = manifest.extensions['worldgraph.economy'];
-  return (
-    extension !== null &&
-    typeof extension === 'object' &&
-    !Array.isArray(extension) &&
-    extension.schemaVersion === 2
-  );
+function requiredCompilerVersion(
+  manifest: WorldCompilationSource['manifest'],
+): typeof RETAINED_COMPILER_VERSION | typeof PREVIOUS_COMPILER_VERSION | typeof COMPILER_VERSION {
+  const governance = manifest.extensions['worldgraph.governance'];
+  if (
+    governance !== null &&
+    typeof governance === 'object' &&
+    !Array.isArray(governance) &&
+    governance.schemaVersion === 1
+  ) {
+    return COMPILER_VERSION;
+  }
+  const economy = manifest.extensions['worldgraph.economy'];
+  return economy !== null &&
+    typeof economy === 'object' &&
+    !Array.isArray(economy) &&
+    economy.schemaVersion === 2
+    ? PREVIOUS_COMPILER_VERSION
+    : RETAINED_COMPILER_VERSION;
 }
 
 export class WorldCompilationRunner {
@@ -323,7 +339,8 @@ export class WorldCompilationRunner {
       'validate',
       async () => {
         if (
-          (job.compilerVersion !== PREVIOUS_COMPILER_VERSION &&
+          (job.compilerVersion !== RETAINED_COMPILER_VERSION &&
+            job.compilerVersion !== PREVIOUS_COMPILER_VERSION &&
             job.compilerVersion !== COMPILER_VERSION) ||
           job.compilerConfigVersion !== COMPILER_CONFIG_SCHEMA_VERSION
         ) {
@@ -335,10 +352,7 @@ export class WorldCompilationRunner {
             ? ({ kind: 'source_stale' } as const)
             : ({ kind: 'lost_claim' } as const);
         }
-        if (
-          requiresCurrentCompiler(source.manifest) !==
-          (job.compilerVersion === COMPILER_VERSION)
-        ) {
+        if (requiredCompilerVersion(source.manifest) !== job.compilerVersion) {
           return { kind: 'version_mismatch' } as const;
         }
         const bundle = this.bundle(job, source);
@@ -395,9 +409,11 @@ export class WorldCompilationRunner {
       'compile',
       () => {
         const compiled =
-          bundle.compilerVersion === PREVIOUS_COMPILER_VERSION
-            ? compilePreviousArtifactForCompatibility(bundle)
-            : compileWorld(bundle);
+          bundle.compilerVersion === RETAINED_COMPILER_VERSION
+            ? compileRetainedArtifactForCompatibility(bundle)
+            : bundle.compilerVersion === PREVIOUS_COMPILER_VERSION
+              ? compilePreviousArtifactForCompatibility(bundle)
+              : compileWorld(bundle);
         if (!compiled.artifact) {
           return { diagnostics: compiled.diagnostics, kind: 'compile_failed' } as const;
         }
@@ -539,6 +555,9 @@ export class WorldCompilationRunner {
       primitives: source.primitives,
       seed: job.seed,
     };
+    if (job.compilerVersion === RETAINED_COMPILER_VERSION) {
+      return createRetainedCompilerInputBundle(options);
+    }
     if (job.compilerVersion === PREVIOUS_COMPILER_VERSION) {
       return createPreviousCompilerInputBundle(options);
     }

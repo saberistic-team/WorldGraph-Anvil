@@ -48,6 +48,18 @@ describe('runtime configuration', () => {
       economyTransferRateLimitPerMinute: 20,
       economyTransfersEnabled: true,
       economyWorkRateLimitPerMinute: 10,
+      governanceContestRateLimitPerHour: 6,
+      governanceContestsEnabled: true,
+      governanceEnactmentEnabled: true,
+      governanceNominationRateLimitPerMinute: 10,
+      governanceOverridesEnabled: true,
+      governanceScheduleBatchSize: 25,
+      governanceScheduleEnabled: true,
+      governanceScheduleReconciliationIntervalMs: 1_000,
+      governanceSponsorRateLimitPerMinute: 20,
+      governanceTwoPersonControlEnabled: false,
+      governanceVoteRateLimitPerMinute: 30,
+      governanceVotingEnabled: true,
       manifestGenerationDailyBudgetMicrounits: 0,
       manifestGenerationEnabled: true,
       manifestGenerationMaxConcurrentPerUser: 2,
@@ -70,6 +82,58 @@ describe('runtime configuration', () => {
       simulationRetryBaseMs: 250,
       worldCompilationReconciliationIntervalMs: 2_000,
     });
+  });
+
+  it('parses independent governance safety and scheduler controls', () => {
+    expect(
+      loadRuntimeConfig({
+        ...baseEnv,
+        GOVERNANCE_CONTEST_RATE_LIMIT_PER_HOUR: '8',
+        GOVERNANCE_CONTESTS_ENABLED: 'false',
+        GOVERNANCE_ENACTMENT_ENABLED: 'false',
+        GOVERNANCE_NOMINATION_RATE_LIMIT_PER_MINUTE: '12',
+        GOVERNANCE_OVERRIDES_ENABLED: 'false',
+        GOVERNANCE_SCHEDULE_BATCH_SIZE: '40',
+        GOVERNANCE_SCHEDULE_ENABLED: 'false',
+        GOVERNANCE_SCHEDULE_RECONCILIATION_INTERVAL_MS: '750',
+        GOVERNANCE_SPONSOR_RATE_LIMIT_PER_MINUTE: '22',
+        GOVERNANCE_TALLY_DATABASE_URL: 'postgres://tally:secret@localhost/worldgraph',
+        GOVERNANCE_TWO_PERSON_CONTROL_ENABLED: 'true',
+        GOVERNANCE_VOTE_RATE_LIMIT_PER_MINUTE: '32',
+        GOVERNANCE_VOTING_ENABLED: 'false',
+      }),
+    ).toMatchObject({
+      governanceContestRateLimitPerHour: 8,
+      governanceContestsEnabled: false,
+      governanceEnactmentEnabled: false,
+      governanceNominationRateLimitPerMinute: 12,
+      governanceOverridesEnabled: false,
+      governanceScheduleBatchSize: 40,
+      governanceScheduleEnabled: false,
+      governanceScheduleReconciliationIntervalMs: 750,
+      governanceSponsorRateLimitPerMinute: 22,
+      governanceTallyDatabaseUrl: 'postgres://tally:secret@localhost/worldgraph',
+      governanceTwoPersonControlEnabled: true,
+      governanceVoteRateLimitPerMinute: 32,
+      governanceVotingEnabled: false,
+    });
+  });
+
+  it.each([
+    [{ GOVERNANCE_CONTESTS_ENABLED: 'sometimes' }, 'must be true or false'],
+    [{ GOVERNANCE_ENACTMENT_ENABLED: 'sometimes' }, 'must be true or false'],
+    [{ GOVERNANCE_OVERRIDES_ENABLED: 'sometimes' }, 'must be true or false'],
+    [{ GOVERNANCE_VOTING_ENABLED: 'sometimes' }, 'must be true or false'],
+    [{ GOVERNANCE_TWO_PERSON_CONTROL_ENABLED: 'sometimes' }, 'must be true or false'],
+    [{ GOVERNANCE_CONTEST_RATE_LIMIT_PER_HOUR: '0' }, '1 to 1000'],
+    [{ GOVERNANCE_NOMINATION_RATE_LIMIT_PER_MINUTE: '1001' }, '1 to 1000'],
+    [{ GOVERNANCE_SPONSOR_RATE_LIMIT_PER_MINUTE: '0' }, '1 to 1000'],
+    [{ GOVERNANCE_VOTE_RATE_LIMIT_PER_MINUTE: '1001' }, '1 to 1000'],
+    [{ GOVERNANCE_SCHEDULE_BATCH_SIZE: '0' }, '1 to 250'],
+    [{ GOVERNANCE_SCHEDULE_RECONCILIATION_INTERVAL_MS: '99' }, '100 to 60000'],
+    [{ GOVERNANCE_TALLY_DATABASE_URL: 'redis://localhost/0' }, 'must use postgres: or postgresql:'],
+  ])('fails closed for invalid governance configuration %#', (overrides, message) => {
+    expect(() => loadRuntimeConfig({ ...baseEnv, ...overrides })).toThrow(message);
   });
 
   it('parses bounded commerce scheduler bridge controls', () => {
@@ -230,6 +294,10 @@ describe('runtime configuration', () => {
         SESSION_IDLE_TTL_SECONDS: '7200',
       }),
     ).toThrow('cannot exceed');
+    expect(() => loadRuntimeConfig({ ...baseEnv, GOVERNANCE_STEP_UP_TTL_SECONDS: '901' })).toThrow(
+      '30 to 900',
+    );
+    expect(loadRuntimeConfig(baseEnv).governanceStepUpTtlSeconds).toBe(300);
   });
 
   it('selects the local-only semantic profile with independently controlled contribution and bounded worker limits', () => {

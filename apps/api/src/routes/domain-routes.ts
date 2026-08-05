@@ -15,6 +15,7 @@ import {
   InvitationSchema,
   LoginRequestSchema,
   MembershipSchema,
+  RecentCredentialProofSchema,
   RegisterRequestSchema,
   RemoveMembershipRequestSchema,
   RenameWorldRequestSchema,
@@ -39,12 +40,21 @@ import type { PrimitiveService } from '../primitives/service.js';
 import type { ManifestService } from '../manifests/service.js';
 import type { CompilationService } from '../compilation/service.js';
 import type { WorldCommandService } from '../commands/service.js';
+import {
+  GovernanceApprovalRequestTransportSchema,
+  GovernanceApprovalResponseTransportSchema,
+  type GovernanceApprovalRequestTransport,
+  RecentCredentialRequestTransportSchema,
+  type RecentCredentialRequestTransport,
+} from '../commands/api-contracts.js';
 import type { EconomyQueryService } from '../economy/service.js';
 import type { CommerceReadService } from '../economy/commerce-read-service.js';
+import type { GovernanceReadService } from '../governance/service.js';
 import { registerCommerceReadRoutes } from './commerce-read-routes.js';
 import { registerCommandRoutes } from './command-routes.js';
 import { registerCompilerRoutes } from './compiler-routes.js';
 import { registerEconomyRoutes } from './economy-routes.js';
+import { registerGovernanceRoutes } from './governance-routes.js';
 import { registerManifestRoutes } from './manifest-routes.js';
 import { registerPrimitiveRoutes } from './primitive-routes.js';
 
@@ -67,6 +77,10 @@ const MutationHeaders = Type.Object(
     'idempotency-key': IdempotencyKeySchema,
     'x-csrf-token': Type.Optional(Type.String({ maxLength: 128, minLength: 32 })),
   },
+  { additionalProperties: true },
+);
+const ReauthenticationHeaders = Type.Object(
+  { 'x-csrf-token': Type.Optional(Type.String({ maxLength: 128, minLength: 32 })) },
   { additionalProperties: true },
 );
 const PageSchema = <T>(item: T) =>
@@ -145,6 +159,7 @@ export interface DomainServices {
   commands?: WorldCommandService;
   compilation?: CompilationService;
   economy?: EconomyQueryService;
+  governance?: GovernanceReadService;
   identity: IdentityService;
   manifests?: ManifestService;
   primitives?: PrimitiveService;
@@ -159,6 +174,7 @@ export async function registerDomainRoutes(
   if (!config.authPepper) throw new Error('Domain routes require authentication configuration.');
   const registerRateLimit = authenticationRateLimit(app, config.authPepper, 'register', 5, 25);
   const loginRateLimit = authenticationRateLimit(app, config.authPepper, 'login', 8, 40);
+  const reauthenticationRateLimit = sessionAuthenticationRateLimit(app, config.authPepper);
   const commonErrors = {
     400: ErrorEnvelopeSchema,
     401: ErrorEnvelopeSchema,
@@ -234,6 +250,45 @@ export async function registerDomainRoutes(
       const csrfToken = await services.identity.rotateCsrf(actor);
       setCsrfCookie(reply, csrfToken, config);
       return { csrfToken };
+    },
+  );
+
+  app.post<{ Body: RecentCredentialRequestTransport }>(
+    '/api/v1/auth/reauthenticate',
+    {
+      preHandler: reauthenticationRateLimit,
+      schema: {
+        body: RecentCredentialRequestTransportSchema,
+        headers: ReauthenticationHeaders,
+        response: { 200: RecentCredentialProofSchema, ...commonErrors },
+      },
+    },
+    async (request, reply) => {
+      const actor = await authenticatedMutation(request, services.identity, config);
+      const proof = await services.identity.reauthenticate(actor, request.body, request.id);
+      return reply.header('cache-control', 'no-store').send(proof);
+    },
+  );
+
+  app.post<{ Body: GovernanceApprovalRequestTransport }>(
+    '/api/v1/auth/governance-approval',
+    {
+      preHandler: reauthenticationRateLimit,
+      schema: {
+        body: GovernanceApprovalRequestTransportSchema,
+        headers: MutationHeaders,
+        response: { 200: GovernanceApprovalResponseTransportSchema, ...commonErrors },
+      },
+    },
+    async (request, reply) => {
+      const actor = await authenticatedMutation(request, services.identity, config);
+      const approval = await services.identity.approveGovernanceOperation(
+        actor,
+        request.body,
+        request.id,
+        request.headers['idempotency-key'] as string,
+      );
+      return reply.header('cache-control', 'no-store').send(approval);
     },
   );
 
@@ -546,6 +601,8 @@ export async function registerDomainRoutes(
     await registerCommandRoutes(app, services.commands, {
       authenticate: (request) => authenticate(request, services.identity),
       mutation: (request) => authenticatedMutation(request, services.identity, config),
+      recentCredential: (actor, proofToken, command) =>
+        services.identity.governanceRecentCredential(actor, proofToken, command),
     });
   }
   if (services.economy) {
@@ -556,6 +613,11 @@ export async function registerDomainRoutes(
   }
   if (services.commerceReads) {
     await registerCommerceReadRoutes(app, services.commerceReads, {
+      authenticate: (request) => authenticate(request, services.identity),
+    });
+  }
+  if (services.governance) {
+    await registerGovernanceRoutes(app, services.governance, {
       authenticate: (request) => authenticate(request, services.identity),
     });
   }
@@ -647,6 +709,39 @@ function authenticationRateLimit(
     const networkExceeded = !networkResult.isAllowed && networkResult.isExceeded;
     if (accountExceeded || networkExceeded) {
       telemetry.identityAttempts.add(1, { flow, outcome: 'rate_limited' });
+      throw new ApplicationError('RATE_LIMITED', 'Too many authentication attempts.', 429);
+    }
+  };
+}
+
+function sessionAuthenticationRateLimit(app: FastifyInstance, pepper: string) {
+  const session = app.createRateLimit({
+    keyGenerator: (request) =>
+      hashSecret(
+        request.cookies[SESSION_COOKIE] ?? 'anonymous',
+        pepper,
+        'worldgraph.rate_limit.reauthenticate.session.v1',
+      ).toString('hex'),
+    max: 5,
+    timeWindow: '1 minute',
+  });
+  const network = app.createRateLimit({
+    keyGenerator: (request) =>
+      hashSecret(
+        coarseNetworkAddress(request.ip),
+        pepper,
+        'worldgraph.rate_limit.reauthenticate.network.v1',
+      ).toString('hex'),
+    max: 20,
+    timeWindow: '1 minute',
+  });
+  return async (request: FastifyRequest): Promise<void> => {
+    const [sessionResult, networkResult] = await Promise.all([session(request), network(request)]);
+    if (
+      (!sessionResult.isAllowed && sessionResult.isExceeded) ||
+      (!networkResult.isAllowed && networkResult.isExceeded)
+    ) {
+      telemetry.identityAttempts.add(1, { flow: 'reauthenticate', outcome: 'rate_limited' });
       throw new ApplicationError('RATE_LIMITED', 'Too many authentication attempts.', 429);
     }
   };

@@ -54,6 +54,14 @@ export const LoginRequestSchema = Type.Object(
   { additionalProperties: false },
 );
 
+export const RecentCredentialProofSchema = Type.Object(
+  {
+    expiresAt: Type.String({ format: 'date-time' }),
+    proofToken: Type.String({ maxLength: 128, minLength: 32 }),
+  },
+  { additionalProperties: false },
+);
+
 export const CsrfResponseSchema = Type.Object(
   { csrfToken: Type.String({ maxLength: 128, minLength: 32 }) },
   { additionalProperties: false },
@@ -62,6 +70,7 @@ export const CsrfResponseSchema = Type.Object(
 export type AuthenticatedSession = Static<typeof AuthenticatedSessionSchema>;
 export type LoginRequest = Static<typeof LoginRequestSchema>;
 export type PlatformRole = Static<typeof PlatformRoleSchema>;
+export type RecentCredentialProof = Static<typeof RecentCredentialProofSchema>;
 export type RegisterRequest = Static<typeof RegisterRequestSchema>;
 export type SafeUser = Static<typeof SafeUserSchema>;
 export type SessionView = Static<typeof SessionViewSchema>;

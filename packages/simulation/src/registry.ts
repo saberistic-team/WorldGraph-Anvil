@@ -1,17 +1,29 @@
 import {
   AssessPeriodicTaxScheduledActionPayloadV1Schema,
+  CertifyAndEnactProposalScheduledActionPayloadV1Schema,
+  CertifyElectionScheduledActionPayloadV1Schema,
+  CloseAndTallyElectionScheduledActionPayloadV1Schema,
+  CloseAndTallyProposalScheduledActionPayloadV1Schema,
   CompleteProductionRunScheduledActionPayloadV1Schema,
   EmitWorldNoticePayloadV1Schema,
   ExpireMarketListingScheduledActionPayloadV1Schema,
+  OpenElectionScheduledActionPayloadV1Schema,
+  OpenProposalVotingScheduledActionPayloadV1Schema,
   SIMULATION_PRNG_ALGORITHM_VERSION,
   SIMULATION_PROCESS_REGISTRY_VERSION,
   SettlePayrollScheduledActionPayloadV1Schema,
   SimulationProcessContextV1Schema,
   createValidator,
   type AssessPeriodicTaxScheduledActionPayloadV1,
+  type CertifyAndEnactProposalScheduledActionPayloadV1,
+  type CertifyElectionScheduledActionPayloadV1,
+  type CloseAndTallyElectionScheduledActionPayloadV1,
+  type CloseAndTallyProposalScheduledActionPayloadV1,
   type CompleteProductionRunScheduledActionPayloadV1,
   type EmitWorldNoticePayloadV1,
   type ExpireMarketListingScheduledActionPayloadV1,
+  type OpenElectionScheduledActionPayloadV1,
+  type OpenProposalVotingScheduledActionPayloadV1,
   type ScheduledActionType,
   type SettlePayrollScheduledActionPayloadV1,
   type SimulationProcessContextV1,
@@ -37,6 +49,27 @@ const listingPayloadValidator = createValidator<ExpireMarketListingScheduledActi
 );
 const taxPayloadValidator = createValidator<AssessPeriodicTaxScheduledActionPayloadV1>(
   AssessPeriodicTaxScheduledActionPayloadV1Schema,
+);
+const openProposalPayloadValidator = createValidator<OpenProposalVotingScheduledActionPayloadV1>(
+  OpenProposalVotingScheduledActionPayloadV1Schema,
+);
+const closeProposalPayloadValidator =
+  createValidator<CloseAndTallyProposalScheduledActionPayloadV1>(
+    CloseAndTallyProposalScheduledActionPayloadV1Schema,
+  );
+const enactProposalPayloadValidator =
+  createValidator<CertifyAndEnactProposalScheduledActionPayloadV1>(
+    CertifyAndEnactProposalScheduledActionPayloadV1Schema,
+  );
+const openElectionPayloadValidator = createValidator<OpenElectionScheduledActionPayloadV1>(
+  OpenElectionScheduledActionPayloadV1Schema,
+);
+const closeElectionPayloadValidator =
+  createValidator<CloseAndTallyElectionScheduledActionPayloadV1>(
+    CloseAndTallyElectionScheduledActionPayloadV1Schema,
+  );
+const certifyElectionPayloadValidator = createValidator<CertifyElectionScheduledActionPayloadV1>(
+  CertifyElectionScheduledActionPayloadV1Schema,
 );
 const contextValidator = createValidator<SimulationProcessContextV1>(
   SimulationProcessContextV1Schema,
@@ -101,13 +134,55 @@ export const ASSESS_PERIODIC_TAX_DESCRIPTOR_V1 = descriptor(
   'system_scheduler',
   0,
 );
+export const OPEN_PROPOSAL_VOTING_DESCRIPTOR_V1 = descriptor(
+  'OpenProposalVotingV1',
+  'OpenProposalVotingScheduledActionPayloadV1',
+  'system_scheduler',
+  0,
+);
+export const CLOSE_AND_TALLY_PROPOSAL_DESCRIPTOR_V1 = descriptor(
+  'CloseAndTallyProposalV1',
+  'CloseAndTallyProposalScheduledActionPayloadV1',
+  'system_scheduler',
+  0,
+);
+export const CERTIFY_AND_ENACT_PROPOSAL_DESCRIPTOR_V1 = descriptor(
+  'CertifyAndEnactProposalV1',
+  'CertifyAndEnactProposalScheduledActionPayloadV1',
+  'system_scheduler',
+  0,
+);
+export const OPEN_ELECTION_DESCRIPTOR_V1 = descriptor(
+  'OpenElectionV1',
+  'OpenElectionScheduledActionPayloadV1',
+  'system_scheduler',
+  0,
+);
+export const CLOSE_AND_TALLY_ELECTION_DESCRIPTOR_V1 = descriptor(
+  'CloseAndTallyElectionV1',
+  'CloseAndTallyElectionScheduledActionPayloadV1',
+  'system_scheduler',
+  0,
+);
+export const CERTIFY_ELECTION_DESCRIPTOR_V1 = descriptor(
+  'CertifyElectionV1',
+  'CertifyElectionScheduledActionPayloadV1',
+  'system_scheduler',
+  0,
+);
 
 const descriptors: Readonly<Record<ScheduledActionType, SimulationProcessDescriptorV1>> =
   Object.freeze({
     AssessPeriodicTaxV1: ASSESS_PERIODIC_TAX_DESCRIPTOR_V1,
+    CertifyAndEnactProposalV1: CERTIFY_AND_ENACT_PROPOSAL_DESCRIPTOR_V1,
+    CertifyElectionV1: CERTIFY_ELECTION_DESCRIPTOR_V1,
+    CloseAndTallyElectionV1: CLOSE_AND_TALLY_ELECTION_DESCRIPTOR_V1,
+    CloseAndTallyProposalV1: CLOSE_AND_TALLY_PROPOSAL_DESCRIPTOR_V1,
     CompleteProductionRunV1: COMPLETE_PRODUCTION_RUN_DESCRIPTOR_V1,
     EmitWorldNoticeV1: EMIT_WORLD_NOTICE_DESCRIPTOR_V1,
     ExpireMarketListingV1: EXPIRE_MARKET_LISTING_DESCRIPTOR_V1,
+    OpenElectionV1: OPEN_ELECTION_DESCRIPTOR_V1,
+    OpenProposalVotingV1: OPEN_PROPOSAL_VOTING_DESCRIPTOR_V1,
     SettlePayrollV1: SETTLE_PAYROLL_DESCRIPTOR_V1,
   });
 
@@ -228,6 +303,18 @@ function payloadMatches(actionType: ScheduledActionType, payload: unknown): bool
       return listingPayloadValidator.is(payload);
     case 'AssessPeriodicTaxV1':
       return taxPayloadValidator.is(payload);
+    case 'OpenProposalVotingV1':
+      return openProposalPayloadValidator.is(payload);
+    case 'CloseAndTallyProposalV1':
+      return closeProposalPayloadValidator.is(payload);
+    case 'CertifyAndEnactProposalV1':
+      return enactProposalPayloadValidator.is(payload);
+    case 'OpenElectionV1':
+      return openElectionPayloadValidator.is(payload);
+    case 'CloseAndTallyElectionV1':
+      return closeElectionPayloadValidator.is(payload);
+    case 'CertifyElectionV1':
+      return certifyElectionPayloadValidator.is(payload);
   }
 }
 
@@ -238,6 +325,12 @@ export function simulationProcessDescriptorsV1(): readonly SimulationProcessDesc
     SETTLE_PAYROLL_DESCRIPTOR_V1,
     EXPIRE_MARKET_LISTING_DESCRIPTOR_V1,
     ASSESS_PERIODIC_TAX_DESCRIPTOR_V1,
+    OPEN_PROPOSAL_VOTING_DESCRIPTOR_V1,
+    CLOSE_AND_TALLY_PROPOSAL_DESCRIPTOR_V1,
+    CERTIFY_AND_ENACT_PROPOSAL_DESCRIPTOR_V1,
+    OPEN_ELECTION_DESCRIPTOR_V1,
+    CLOSE_AND_TALLY_ELECTION_DESCRIPTOR_V1,
+    CERTIFY_ELECTION_DESCRIPTOR_V1,
   ];
 }
 

@@ -96,4 +96,41 @@ describe('worker health server', () => {
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toEqual({ status: 'ok' });
   });
+
+  it('includes the restricted tally connection in readiness when configured', async () => {
+    const tally = {
+      query: async () => {
+        throw new Error('postgres://tally:secret@example.test/private');
+      },
+    };
+    const server = createHealthServer(
+      { ping: async () => 'PONG' },
+      { query: async () => ({ rows: [{ ready: 1 }] }) },
+      logger,
+      25,
+      { governanceTally: tally },
+    );
+    servers.push(server);
+    await new Promise<void>((resolve, reject) => {
+      server.once('error', reject);
+      server.listen(0, '127.0.0.1', resolve);
+    });
+    const address = server.address() as AddressInfo;
+    const response = await fetch(`http://127.0.0.1:${address.port}/health/ready`);
+
+    expect(response.status).toBe(503);
+    const body = (await response.json()) as unknown;
+    expect(body).toEqual({
+      components: {
+        governanceTally: 'unavailable',
+        postgresql: 'healthy',
+        redis: 'healthy',
+      },
+      error: {
+        code: 'DEPENDENCY_NOT_READY',
+        message: 'Worker dependencies are unavailable.',
+      },
+    });
+    expect(JSON.stringify(body)).not.toContain('secret');
+  });
 });

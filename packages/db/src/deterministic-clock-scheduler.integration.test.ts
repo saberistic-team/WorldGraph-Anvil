@@ -285,15 +285,15 @@ describe('M07 deterministic clock and scheduler migration', () => {
 
   it('upgrades compatibility and appends one truthful paused initialization fact', async () => {
     await expect(readRuntimeVersions(owner.pool)).resolves.toMatchObject({
-      contracts: 8,
-      runtimeSchema: 8,
+      contracts: 10,
+      runtimeSchema: 10,
       simulationBatchSchema: 1,
       simulationClockSchema: 1,
       simulationFailureSchema: 1,
       simulationOutcomeSchema: 1,
       simulationPrngAlgorithm: 'xorshift32-sha256-v1',
       simulationPrngSchema: 1,
-      simulationProcessRegistry: 1,
+      simulationProcessRegistry: 3,
       simulationProcessSchema: 1,
       simulationProjectionSchema: 1,
       simulationQueueSchema: 1,
@@ -1099,6 +1099,7 @@ describe('M07 deterministic clock and scheduler migration', () => {
       const batchId = '078f0000-0000-7000-8000-000000000768';
       const failureId = '078f0000-0000-7000-8000-000000000769';
       const eventId = '078f0000-0000-7000-8000-000000000770';
+      const scheduleId = '078f0000-0000-7000-8000-000000000771';
       await connection.query(
         `insert into command_records(
            id,world_id,command_type,command_schema_version,actor_type,actor_id,
@@ -1133,15 +1134,35 @@ describe('M07 deterministic clock and scheduler migration', () => {
         [batchId, worldId],
       );
       await connection.query(
+        `insert into scheduled_actions(
+           id,world_id,schedule_sequence,due_tick,priority,action_type,
+           action_schema_version,payload,payload_hash,process_version,
+           created_by_actor_type,created_by_actor_id,created_command_id,
+           created_state_revision,created_at,updated_at
+         ) values (
+           $1,$2,997,2,0,'EmitWorldNoticeV1',1,$3,
+           extensions.digest(convert_to(worldgraph_canonical_jsonb($3::jsonb),'UTF8'),'sha256'),
+           '1.0.0','system','worldgraph:failure-fact-test',$4,2,
+           date_trunc('milliseconds',transaction_timestamp()),
+           date_trunc('milliseconds',transaction_timestamp())
+         )`,
+        [
+          scheduleId,
+          worldId,
+          { text: 'Mismatched due tick fixture.', visibility: 'member' },
+          commandId,
+        ],
+      );
+      await connection.query(
         `insert into simulation_failures(
            id,world_id,failure_schema_version,batch_run_id,tick,schedule_id,
            process_type,process_version,error_code,redacted_context,attempts,opened_at
          ) values (
-           $1,$2,1,$3,1,null,'EmitWorldNoticeV1','1.0.0',
+           $1,$2,1,$3,1,$4,'EmitWorldNoticeV1','1.0.0',
            'SIMULATION_HANDLER_FAILED','{}',1,
            date_trunc('milliseconds',transaction_timestamp())
          )`,
-        [failureId, worldId, batchId],
+        [failureId, worldId, batchId, scheduleId],
       );
       await connection.query(
         `insert into domain_events(
@@ -1155,7 +1176,7 @@ describe('M07 deterministic clock and scheduler migration', () => {
            jsonb_build_object(
              'attempts',1,'batchRunId',$5::text,'errorCode','SIMULATION_HANDLER_FAILED',
              'failureId',$4::text,'processType','EmitWorldNoticeV1',
-             'processVersion','1.0.0','scheduleId',null,'tick','1'
+             'processVersion','1.0.0','scheduleId',$6::uuid::text,'tick','1'
            ),
            jsonb_build_object(
              'actor',jsonb_build_object(
@@ -1169,7 +1190,7 @@ describe('M07 deterministic clock and scheduler migration', () => {
            date_trunc('milliseconds',transaction_timestamp()),
            date_trunc('milliseconds',transaction_timestamp()),3
          )`,
-        [eventId, worldId, commandId, failureId, batchId],
+        [eventId, worldId, commandId, failureId, batchId, scheduleId],
       );
       await connection.query(
         `update command_records
@@ -1770,7 +1791,7 @@ describe('M07 deterministic clock and scheduler migration', () => {
     });
     await owner.pool.query(
       `update simulation_worker_leases
-       set leased_until=clock_timestamp(),heartbeat_at=clock_timestamp()
+       set leased_until=transaction_timestamp(),heartbeat_at=transaction_timestamp()
        where world_id=$1`,
       [worldId],
     );
@@ -1951,6 +1972,7 @@ describe('M07 deterministic clock and scheduler migration', () => {
       );
       expect(checkpointTriggers.rows).toEqual([
         { trigger_name: 'projection_checkpoints_protect' },
+        { trigger_name: 'projection_checkpoints_require_commerce_command' },
         { trigger_name: 'projection_checkpoints_require_economy_command' },
         { trigger_name: 'projection_checkpoints_require_simulation_command' },
       ]);
@@ -2064,8 +2086,8 @@ describe('M07 deterministic clock and scheduler migration', () => {
     try {
       await migrate(fresh.db, { migrationsFolder: migrationRoot });
       await expect(readRuntimeVersions(fresh.pool)).resolves.toMatchObject({
-        contracts: 8,
-        runtimeSchema: 8,
+        contracts: 10,
+        runtimeSchema: 10,
         simulationClockSchema: 1,
         simulationScheduleSchema: 1,
       });

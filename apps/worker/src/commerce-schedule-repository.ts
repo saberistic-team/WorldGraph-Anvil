@@ -39,7 +39,12 @@ export class PostgresCommerceScheduleRepository implements CommerceScheduleRepos
   public constructor(
     private readonly pool: Pool,
     private readonly disabledTaxPolicyIds: readonly string[] = [],
-  ) {}
+    private readonly worldIdScope?: string,
+  ) {
+    if (worldIdScope !== undefined && !UUID.test(worldIdScope)) {
+      throw new Error('COMMERCE_SCHEDULE_WORLD_SCOPE_INVALID');
+    }
+  }
 
   public async findPendingEffects(limit: number): Promise<CommerceScheduledEffectCandidate[]> {
     if (!Number.isSafeInteger(limit) || limit < 1 || limit > 250) {
@@ -66,6 +71,7 @@ export class PostgresCommerceScheduleRepository implements CommerceScheduleRepos
           and action.action_type = any($1::text[])
           and action.action_schema_version = 1
           and action.process_version = '1.0.0'
+          and ($3::uuid is null or action.world_id = $3::uuid)
           and case action.action_type
             when 'CompleteProductionRunV1' then exists (
               select 1 from production_runs run
@@ -89,15 +95,12 @@ export class PostgresCommerceScheduleRepository implements CommerceScheduleRepos
                  and listing.status = 'open'
             )
             when 'AssessPeriodicTaxV1' then exists (
-              select 1 from tax_policies policy
-               where policy.world_id = action.world_id
-                 and policy.id = (action.payload ->> 'taxPolicyId')::uuid
-                 and policy.tax_type = 'periodic_flat'
+              select 1 from worldgraph_tax_policy_effective_at_v2(
+                action.world_id,'periodic_flat',clock.current_tick
+              ) policy
+               where policy.id = (action.payload ->> 'taxPolicyId')::uuid
                  and policy.status = 'active'
                  and not (policy.id = any($2::uuid[]))
-                 and policy.effective_from_tick <= clock.current_tick
-                 and (policy.effective_until_tick is null
-                   or policy.effective_until_tick > clock.current_tick)
             )
             else false
           end
@@ -112,7 +115,7 @@ export class PostgresCommerceScheduleRepository implements CommerceScheduleRepos
                and command.status = 'accepted'
           )
         order by action.due_tick, action.priority, action.schedule_sequence, action.id
-        limit $3`,
+        limit $4`,
       [
         [
           'CompleteProductionRunV1',
@@ -121,6 +124,7 @@ export class PostgresCommerceScheduleRepository implements CommerceScheduleRepos
           'AssessPeriodicTaxV1',
         ],
         this.disabledTaxPolicyIds,
+        this.worldIdScope ?? null,
         limit,
       ],
     );

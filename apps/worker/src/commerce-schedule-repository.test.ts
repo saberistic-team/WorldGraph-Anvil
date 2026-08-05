@@ -54,9 +54,10 @@ describe('Postgres commerce schedule repository', () => {
       sql.indexOf("when 'AssessPeriodicTaxV1'"),
       sql.indexOf('else false'),
     );
-    expect(periodicClause).toContain('policy.effective_from_tick <= clock.current_tick');
-    expect(periodicClause).toContain('policy.effective_until_tick > clock.current_tick');
+    expect(periodicClause).toContain('worldgraph_tax_policy_effective_at_v2(');
+    expect(periodicClause).not.toContain('policy.effective_until_tick > clock.current_tick');
     expect(periodicClause).toContain('not (policy.id = any($2::uuid[]))');
+    expect(sql).toContain('($3::uuid is null or action.world_id = $3::uuid)');
     expect(values).toEqual([
       [
         'CompleteProductionRunV1',
@@ -65,8 +66,35 @@ describe('Postgres commerce schedule repository', () => {
         'AssessPeriodicTaxV1',
       ],
       [targetId],
+      null,
       25,
     ]);
+  });
+
+  it('can scope deterministic reconciliation to one world before applying the batch limit', async () => {
+    const query = vi.fn(async (_sql: string, _values?: unknown[]) => ({ rows: [] }));
+    const repository = new PostgresCommerceScheduleRepository({ query } as never, [], worldId);
+
+    await expect(repository.findPendingEffects(25)).resolves.toEqual([]);
+    expect(query.mock.calls[0]![1]).toEqual([
+      [
+        'CompleteProductionRunV1',
+        'SettlePayrollV1',
+        'ExpireMarketListingV1',
+        'AssessPeriodicTaxV1',
+      ],
+      [],
+      worldId,
+      25,
+    ]);
+  });
+
+  it('rejects an unsafe world scope before querying', async () => {
+    const query = vi.fn();
+    expect(
+      () => new PostgresCommerceScheduleRepository({ query } as never, [], 'not-a-world-id'),
+    ).toThrow('COMMERCE_SCHEDULE_WORLD_SCOPE_INVALID');
+    expect(query).not.toHaveBeenCalled();
   });
 
   it('rejects payloads with computed fields or mismatched target identity', async () => {

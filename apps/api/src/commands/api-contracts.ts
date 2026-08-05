@@ -3,10 +3,13 @@ import { Type, type Static } from '@sinclair/typebox';
 import {
   AUTHORITATIVE_COMMAND_SCHEMA_VERSION,
   IdempotencyKeySchema,
+  ExecuteCreatorOverridePayloadV1Schema,
   LedgerHashSchema,
   LedgerNonNegativeIntegerStringSchema,
   LedgerPositiveIntegerStringSchema,
   LedgerUuidSchema,
+  PasswordSchema,
+  RepairGovernanceResultPayloadV1Schema,
   RenameWorldEntityPayloadV1Schema,
   ScheduledActionV1Schema,
   SimulationBatchRunV1Schema,
@@ -40,6 +43,83 @@ export const SubmitWorldCommandSchema = Type.Object(
     }),
     schemaVersion: Type.Integer({ maximum: 2_147_483_647, minimum: 1 }),
     type: Type.String({ maxLength: 120, minLength: 1, pattern: '^[A-Z][A-Za-z0-9]*V[1-9][0-9]*$' }),
+  },
+  { additionalProperties: false },
+);
+
+const RecentCredentialCommandBase = {
+  commandId: LedgerUuidSchema,
+  expectedAggregateVersion: LedgerNonNegativeIntegerStringSchema,
+  expectedStateRevision: LedgerNonNegativeIntegerStringSchema,
+  expectedTick: LedgerNonNegativeIntegerStringSchema,
+  expectedWorldVersion: LedgerPositiveIntegerStringSchema,
+  idempotencyKey: IdempotencyKeySchema,
+  schemaVersion: Type.Literal(1),
+} as const;
+
+export const RecentCredentialGovernanceCommandTransportSchema = Type.Union([
+  Type.Object(
+    {
+      ...RecentCredentialCommandBase,
+      payload: ExecuteCreatorOverridePayloadV1Schema,
+      type: Type.Literal('ExecuteCreatorOverrideV1'),
+    },
+    { additionalProperties: false },
+  ),
+  Type.Object(
+    {
+      ...RecentCredentialCommandBase,
+      payload: RepairGovernanceResultPayloadV1Schema,
+      type: Type.Literal('RepairGovernanceResultV1'),
+    },
+    { additionalProperties: false },
+  ),
+]);
+
+export const GovernanceApprovalCommandTransportSchema = Type.Union([
+  Type.Object(
+    {
+      ...RecentCredentialCommandBase,
+      actorMode: Type.Union([Type.Literal('creator'), Type.Literal('administrator')]),
+      payload: ExecuteCreatorOverridePayloadV1Schema,
+      type: Type.Literal('ExecuteCreatorOverrideV1'),
+    },
+    { additionalProperties: false },
+  ),
+  Type.Object(
+    {
+      ...RecentCredentialCommandBase,
+      actorMode: Type.Union([Type.Literal('creator'), Type.Literal('administrator')]),
+      payload: RepairGovernanceResultPayloadV1Schema,
+      type: Type.Literal('RepairGovernanceResultV1'),
+    },
+    { additionalProperties: false },
+  ),
+]);
+
+export const RecentCredentialRequestTransportSchema = Type.Object(
+  {
+    command: RecentCredentialGovernanceCommandTransportSchema,
+    password: PasswordSchema,
+    worldId: LedgerUuidSchema,
+  },
+  { additionalProperties: false },
+);
+
+export const GovernanceApprovalRequestTransportSchema = Type.Object(
+  {
+    command: GovernanceApprovalCommandTransportSchema,
+    password: PasswordSchema,
+    worldId: LedgerUuidSchema,
+  },
+  { additionalProperties: false },
+);
+
+export const GovernanceApprovalResponseTransportSchema = Type.Object(
+  {
+    approvalId: LedgerUuidSchema,
+    commandId: LedgerUuidSchema,
+    expiresAt: Type.String({ format: 'date-time' }),
   },
   { additionalProperties: false },
 );
@@ -199,6 +279,21 @@ export const SimulationBatchPageTransportSchema = Type.Object(
 );
 
 export type RenameWorldEntityPayloadTransport = RenameWorldEntityPayloadV1;
+export type RecentCredentialGovernanceCommandTransport = Static<
+  typeof RecentCredentialGovernanceCommandTransportSchema
+>;
+export type GovernanceApprovalCommandTransport = Static<
+  typeof GovernanceApprovalCommandTransportSchema
+>;
+export type RecentCredentialRequestTransport = Static<
+  typeof RecentCredentialRequestTransportSchema
+>;
+export type GovernanceApprovalRequestTransport = Static<
+  typeof GovernanceApprovalRequestTransportSchema
+>;
+export type GovernanceApprovalResponseTransport = Static<
+  typeof GovernanceApprovalResponseTransportSchema
+>;
 export type SubmitWorldCommand = Static<typeof SubmitWorldCommandSchema>;
 export type WorldCommandResultTransport = WorldCommandResultV1;
 export type WorldHistoryEntryTransport = WorldHistoryEntryV1;

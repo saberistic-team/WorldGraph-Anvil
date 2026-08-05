@@ -85,6 +85,20 @@
       "when": 1784635860000,
       "tag": "0012_commerce_reconciliation_integrity",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1784635920000,
+      "tag": "0013_governance_laws_elections",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1784635980000,
+      "tag": "0014_governance_read_capabilities",
+      "breakpoints": true
     }
   ]
 }

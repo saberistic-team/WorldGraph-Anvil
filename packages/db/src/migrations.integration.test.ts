@@ -655,10 +655,12 @@ async function seedM11CommercePayloadBaselines(
          run_id,world_id,transition_version,status,command_id,event_id,
          occurred_tick,state_revision,snapshot_hash
        )
-       select run.id,run.world_id,1,'ready',$2,$3,11,11,run.snapshot_checksum
+       select run.id,run.world_id,1,'ready'::production_run_status,
+         $2::uuid,$3::uuid,11,11,run.snapshot_checksum
        from production_runs run where run.id=$1
        union all
-       select run.id,run.world_id,2,'completed',$4,$5,12,12,run.snapshot_checksum
+       select run.id,run.world_id,2,'completed'::production_run_status,
+         $4::uuid,$5::uuid,12,12,run.snapshot_checksum
        from production_runs run where run.id=$1`,
       [
         fixture.productionRun,
@@ -1028,24 +1030,24 @@ describe('platform and identity-authority migrations', () => {
       'vector',
     ]);
     await expect(readRuntimeVersions(client.pool)).resolves.toMatchObject({
-      compiler: '1.2.0',
-      compilerArtifactSchema: 3,
+      compiler: '1.3.0',
+      compilerArtifactSchema: 4,
       compilerConfigSchema: 1,
       compilationQueueSchema: 1,
       commerceProjectionRepairSchema: 1,
-      contracts: 9,
+      contracts: 10,
       economyExpansionReconciliationSchema: 2,
       economyExpansionSchema: 1,
       economySeedPlanSchema: 2,
       manifestSchema: 1,
       primitiveSchema: 1,
-      runtimeSchema: 9,
-      simulationProcessRegistry: 2,
+      runtimeSchema: 10,
+      simulationProcessRegistry: 3,
       worldGraphSchema: 1,
     });
   });
 
-  it('enforces half-open active tax windows for one identical semantic scope', async () => {
+  it('enforces half-open tax authority through the M10 lineage bridge', async () => {
     const testWorld = '018f0000-0000-7000-8000-00000000d100';
     await expect(
       inTransaction(client, async (connection) => {
@@ -1122,46 +1124,39 @@ describe('platform and identity-authority migrations', () => {
             taxType: 'sales',
           },
         ]);
+        await connection.query(`delete from tax_policies where world_id=$1`, [testWorld]);
       }),
-    ).rejects.toMatchObject({
-      code: '23P01',
-      constraint: 'tax_policies_active_scope_window_exclusion',
-    });
+    ).resolves.toBeUndefined();
     await expect(
       inTransaction(client, async (connection) => {
         await connection.query(`set local session_replication_role='replica'`);
-        await insertTaxPolicyWindowFixtures(connection, testWorld, [
-          {
-            applicability: {
-              intervalTicks: '5',
-              payerEntityId: '018f0000-0000-7000-8000-00000000d711',
-              payerWalletId: '018f0000-0000-7000-8000-00000000d712',
-            },
-            effectiveFromTick: '0',
-            effectiveUntilTick: null,
-            id: '018f0000-0000-7000-8000-00000000d106',
-            policyVersion: 1,
-            stableKey: 'tax-policy:test:dues-c',
-            taxType: 'periodic_flat',
-          },
-          {
-            applicability: {
-              intervalTicks: '7',
-              payerEntityId: '018f0000-0000-7000-8000-00000000d711',
-              payerWalletId: '018f0000-0000-7000-8000-00000000d712',
-            },
-            effectiveFromTick: '5',
-            effectiveUntilTick: '20',
-            id: '018f0000-0000-7000-8000-00000000d107',
-            policyVersion: 2,
-            stableKey: 'tax-policy:test:dues-d',
-            taxType: 'periodic_flat',
-          },
-        ]);
+        await connection.query(
+          `insert into tax_policy_authority_intervals(
+             id,world_id,tax_policy_id,currency_id,tax_type,semantic_scope_key,
+             effective_ticks,created_command_id,updated_command_id
+           ) values
+           (
+             '018f0000-0000-7000-8000-00000000d106',$1,
+             '018f0000-0000-7000-8000-00000000d116',
+             '018f0000-0000-7000-8000-00000000d703','periodic_flat',
+             repeat('d',64),int8range(0,10,'[)'),
+             '018f0000-0000-7000-8000-00000000d706',
+             '018f0000-0000-7000-8000-00000000d706'
+           ),
+           (
+             '018f0000-0000-7000-8000-00000000d107',$1,
+             '018f0000-0000-7000-8000-00000000d117',
+             '018f0000-0000-7000-8000-00000000d703','periodic_flat',
+             repeat('d',64),int8range(5,20,'[)'),
+             '018f0000-0000-7000-8000-00000000d706',
+             '018f0000-0000-7000-8000-00000000d706'
+           )`,
+          [testWorld],
+        );
       }),
     ).rejects.toMatchObject({
       code: '23P01',
-      constraint: 'tax_policies_active_scope_window_exclusion',
+      constraint: 'tax_policy_authority_intervals_no_overlap',
     });
   });
 
@@ -1546,9 +1541,10 @@ describe('platform and identity-authority migrations', () => {
             from information_schema.columns
            where table_schema='public' and table_name='command_records'
              and column_name='rate_limit_scope_hash') as rate_scope_columns,
-         (select pg_get_constraintdef(constraint.oid)
-            from pg_constraint constraint
-           where constraint.conname='economy_expansion_reconciliation_items_kind')
+         (select pg_get_constraintdef(constraint_record.oid)
+            from pg_constraint constraint_record
+           where constraint_record.conname=
+             'economy_expansion_reconciliation_items_kind')
            as item_kind_constraint,
          (select array_agg(index.relname::text order by index.relname)
             from pg_class index
@@ -1626,10 +1622,10 @@ describe('platform and identity-authority migrations', () => {
 
       await migrate(upgradeClient.db, { migrationsFolder: migrationRoot });
       await expect(readRuntimeVersions(upgradeClient.pool)).resolves.toMatchObject({
-        contracts: 9,
+        contracts: 10,
         manifestSchema: 1,
         primitiveSchema: 1,
-        runtimeSchema: 9,
+        runtimeSchema: 10,
       });
       const tables = await upgradeClient.pool.query<{ table_name: string }>(
         `select table_name
@@ -1738,10 +1734,10 @@ describe('platform and identity-authority migrations', () => {
 
       await migrate(upgradeClient.db, { migrationsFolder: migrationRoot });
       await expect(readRuntimeVersions(upgradeClient.pool)).resolves.toMatchObject({
-        contracts: 9,
+        contracts: 10,
         manifestSchema: 1,
         primitiveSchema: 1,
-        runtimeSchema: 9,
+        runtimeSchema: 10,
       });
       await expect(
         upgradeClient.pool.query(
@@ -1769,12 +1765,12 @@ describe('platform and identity-authority migrations', () => {
         sessions: '1',
       });
       await expect(importStarterPrimitives(upgradeClient.pool)).resolves.toEqual({
-        imported: 19,
+        imported: 20,
         unchanged: 0,
       });
       await expect(importStarterPrimitives(upgradeClient.pool)).resolves.toEqual({
         imported: 0,
-        unchanged: 19,
+        unchanged: 20,
       });
     } finally {
       await upgradeClient.pool.end();
@@ -1784,7 +1780,7 @@ describe('platform and identity-authority migrations', () => {
 
   it('supports one spatial and vector query and repeat migration is a no-op', async () => {
     const result = await client.pool.query<{ distance: number; intersects: boolean }>(
-      "select extensions.st_intersects(extensions.st_point(0, 0), extensions.st_point(0, 0)) as intersects, ('[1,2,3]'::extensions.vector OPERATOR(extensions.<->) '[1,2,4]'::extensions.vector)::float8 as distance",
+      "select extensions.st_intersects(extensions.st_point(0::double precision, 0::double precision), extensions.st_point(0::double precision, 0::double precision)) as intersects, ('[1,2,3]'::extensions.vector OPERATOR(extensions.<->) '[1,2,4]'::extensions.vector)::float8 as distance",
     );
     expect(result.rows[0]).toEqual({ distance: 1, intersects: true });
 
@@ -2278,7 +2274,7 @@ describe('platform and identity-authority migrations', () => {
       expect(after.rows).toEqual([
         {
           checkpoint_columns: 3,
-          migration_count: 12,
+          migration_count: 14,
           payload_fact_table: 'commerce_command_payload_facts',
           rate_scope_columns: 1,
           selection_count: 1,
@@ -2498,20 +2494,26 @@ describe('platform and identity-authority migrations', () => {
            has_function_privilege(
              'worldgraph_app','worldgraph_protect_outbox_message()','EXECUTE'
            ) as app_can_execute_protect,
-           (select pg_get_constraintdef(constraint.oid)
-              from pg_constraint constraint
-             where constraint.conrelid='outbox_retry_intents'::regclass
-               and constraint.conname='outbox_retry_intents_message_world_fk')
+           (select pg_get_constraintdef(constraint_record.oid)
+              from pg_constraint constraint_record
+             where constraint_record.conrelid='outbox_retry_intents'::regclass
+               and constraint_record.conname=
+                 'outbox_retry_intents_message_world_fk')
              as message_world_fk,
-           (select pg_get_constraintdef(constraint.oid)
-              from pg_constraint constraint
-             where constraint.conrelid='outbox_messages'::regclass
-               and constraint.conname='outbox_messages_world_identity')
+           (select pg_get_constraintdef(constraint_record.oid)
+              from pg_constraint constraint_record
+             where constraint_record.conrelid='outbox_messages'::regclass
+               and constraint_record.conname=
+                 'outbox_messages_world_identity')
              as outbox_message_world_identity,
-           (select array_agg(constraint.conname order by constraint.conname)
-              from pg_constraint constraint
-             where constraint.conrelid='outbox_retry_intents'::regclass
-               and constraint.conname in (
+           (select array_agg(
+               constraint_record.conname::text
+               order by constraint_record.conname
+             )
+              from pg_constraint constraint_record
+             where constraint_record.conrelid=
+                 'outbox_retry_intents'::regclass
+               and constraint_record.conname in (
                  'outbox_retry_intents_attempts_positive',
                  'outbox_retry_intents_gate_hash_length',
                  'outbox_retry_intents_reason_valid',
@@ -2553,7 +2555,7 @@ describe('platform and identity-authority migrations', () => {
         `select count(*)::integer as migration_count
            from drizzle.__drizzle_migrations`,
       );
-      expect(repeated.rows).toEqual([{ migration_count: 12 }]);
+      expect(repeated.rows).toEqual([{ migration_count: 14 }]);
     } finally {
       await upgradeClient.pool.end();
       await rm(temporaryRoot, { force: true, recursive: true });
@@ -2627,10 +2629,10 @@ describe('platform and identity-authority migrations', () => {
              select 1 from pg_extension where extname='btree_gist'
            ) as extension_installed,
            (
-             select constraint.conname
-             from pg_constraint constraint
-             where constraint.conrelid='tax_policies'::regclass
-               and constraint.conname=
+             select constraint_record.conname
+             from pg_constraint constraint_record
+             where constraint_record.conrelid='tax_policies'::regclass
+               and constraint_record.conname=
                  'tax_policies_active_scope_window_exclusion'
            ) as constraint_name`,
       );
@@ -2709,9 +2711,9 @@ describe('platform and identity-authority migrations', () => {
              'public.worldgraph_retry_dead_outbox_message(uuid,uuid,uuid,uuid,text,text)'
            )::text as retry_function,
            (select count(*)::integer
-              from pg_constraint constraint
-             where constraint.conrelid='outbox_messages'::regclass
-               and constraint.conname='outbox_messages_world_identity')
+              from pg_constraint constraint_record
+             where constraint_record.conrelid='outbox_messages'::regclass
+               and constraint_record.conname='outbox_messages_world_identity')
              as outbox_world_identity_constraints`,
       );
       expect(rollback.rows).toEqual([

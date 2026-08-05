@@ -123,7 +123,7 @@ const commerceFacts = [
     payload: {
       ...base,
       contractId: id(7),
-      errorCode: 'insufficient_funds',
+      errorCode: 'INSUFFICIENT_FUNDS',
       payrollRecordId: id(10),
     },
   },
@@ -163,7 +163,7 @@ const commerceFacts = [
     aggregateId: id(12),
     aggregateType: 'production_run',
     eventType: 'ProductionFailedV1',
-    payload: { ...base, errorCode: 'invalid_output', productionRunId: id(12) },
+    payload: { ...base, errorCode: 'OUTPUT_INVENTORY_UNAVAILABLE', productionRunId: id(12) },
   },
   {
     aggregateId: id(16),

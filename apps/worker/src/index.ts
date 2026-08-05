@@ -5,7 +5,7 @@ import { loadRuntimeConfig } from '@worldgraph/config';
 import { SystemClock, UuidV7Generator } from '@worldgraph/contracts';
 import { createDatabaseClient } from '@worldgraph/db';
 import {
-  createDeterministicHarborCityFallback,
+  createDeterministicGovernedHarborCityFallback,
   createManifestGenerationEngine,
 } from '@worldgraph/manifests';
 import { createLogger, initializeTelemetry } from '@worldgraph/observability';
@@ -13,6 +13,7 @@ import {
   PostgresCommerceScheduledCommand,
   PostgresEconomyOfferExpiryCommand,
 } from '@worldgraph/economy-command';
+import { PostgresGovernanceCommandExecutor } from '@worldgraph/governance-command';
 import { PostgresSimulationAdvanceCommand } from '@worldgraph/simulation-command';
 
 import { Heartbeat } from './heartbeat.js';
@@ -28,6 +29,14 @@ import {
   CommerceScheduleRunner,
   createProductionCommerceScheduleMetrics,
 } from './commerce-schedule-worker.js';
+import { PostgresGovernanceScheduleRepository } from './governance-schedule-repository.js';
+import {
+  createProductionGovernanceScheduleMetrics,
+  createProductionGovernanceScheduleTracing,
+  GovernanceScheduleCoordinator,
+  GovernanceScheduleRunner,
+} from './governance-schedule-worker.js';
+import { PostgresGovernanceRestrictedTallyRepository } from './governance-tally-repository.js';
 import {
   createProductionCommerceRealtimeMetrics,
   RedisCommerceRealtimePublisher,
@@ -89,9 +98,16 @@ const healthRedis = new Redis(config.redisUrl, {
   lazyConnect: true,
   maxRetriesPerRequest: 1,
 });
-const database = createDatabaseClient(config.databaseUrl, 'worldgraph-worker');
-database.pool.on('error', () => {
-  logger.error({ code: 'DATABASE_IDLE_CLIENT_ERROR' }, 'database.idle_client_error');
+const database = createDatabaseClient(config.databaseUrl, 'worldgraph-worker', {
+  onCheckedOutClientError: () => {
+    logger.error(
+      { code: 'DATABASE_CHECKED_OUT_CLIENT_ERROR' },
+      'database.checked_out_client_error',
+    );
+  },
+  onIdleClientError: () => {
+    logger.error({ code: 'DATABASE_IDLE_CLIENT_ERROR' }, 'database.idle_client_error');
+  },
 });
 const clock = new SystemClock();
 const ids = new UuidV7Generator();
@@ -106,7 +122,7 @@ const heartbeat = new Heartbeat(
 const smokeWorker = createSmokeWorker(redis, clock, logger);
 const manifestGenerationProvider = createDisabledManifestGenerationProvider();
 const manifestGenerationEngine = createManifestGenerationEngine(manifestGenerationProvider, {
-  fallbackFactory: createDeterministicHarborCityFallback,
+  fallbackFactory: createDeterministicGovernedHarborCityFallback,
   policy: {
     maxCostMicrounits: config.manifestGenerationDailyBudgetMicrounits,
     maxOutputTokens: config.manifestGenerationOutputTokenLimit,
@@ -301,13 +317,82 @@ const commerceScheduleCoordinator = new CommerceScheduleCoordinator(
     reconciliationIntervalMs: config.commerceScheduleReconciliationIntervalMs ?? 1_000,
   },
 );
+const governanceScheduleEnabled = config.governanceScheduleEnabled ?? true;
+const governanceTallyDatabaseUrl = requiredGovernanceTallyDatabaseUrl(
+  governanceScheduleEnabled,
+  config.governanceTallyDatabaseUrl,
+);
+const governanceTallyDatabase = governanceTallyDatabaseUrl
+  ? createDatabaseClient(governanceTallyDatabaseUrl, 'worldgraph-worker-governance-tally', {
+      onCheckedOutClientError: () => {
+        logger.error(
+          { code: 'GOVERNANCE_TALLY_CHECKED_OUT_CLIENT_ERROR' },
+          'governance.tally_checked_out_client_error',
+        );
+      },
+      onIdleClientError: () => {
+        logger.error(
+          { code: 'GOVERNANCE_TALLY_IDLE_CLIENT_ERROR' },
+          'governance.tally_idle_client_error',
+        );
+      },
+    })
+  : null;
+const governanceTallyRepository = governanceTallyDatabase
+  ? new PostgresGovernanceRestrictedTallyRepository(governanceTallyDatabase.pool)
+  : null;
+const governanceScheduleRepository = governanceTallyRepository
+  ? new PostgresGovernanceScheduleRepository(database.pool, governanceTallyRepository)
+  : null;
+const governanceScheduledCommands = governanceTallyRepository
+  ? new PostgresGovernanceCommandExecutor(database.pool, {
+      ids,
+      policy: {
+        allowEnactment: config.governanceEnactmentEnabled ?? true,
+        allowNewContests: config.governanceContestsEnabled ?? true,
+        allowOverrides: config.governanceOverridesEnabled ?? true,
+        allowVoting: config.governanceVotingEnabled ?? true,
+        requireTwoPersonOverride: config.governanceTwoPersonControlEnabled ?? false,
+        requireTwoPersonRepair: config.governanceTwoPersonControlEnabled ?? false,
+      },
+      restrictedTallyExecutor: governanceTallyRepository,
+    })
+  : null;
+const governanceScheduleRunner =
+  governanceScheduleRepository && governanceScheduledCommands
+    ? new GovernanceScheduleRunner(
+        governanceScheduleRepository,
+        governanceScheduledCommands,
+        logger,
+        {
+          batchSize: config.governanceScheduleBatchSize ?? 25,
+          isActionEnabled: (actionType) =>
+            !(
+              ((config.governanceVotingEnabled ?? true) === false &&
+                (actionType === 'OpenProposalVotingV1' || actionType === 'OpenElectionV1')) ||
+              ((config.governanceEnactmentEnabled ?? true) === false &&
+                actionType === 'CertifyAndEnactProposalV1')
+            ),
+          metrics: createProductionGovernanceScheduleMetrics(),
+          tracing: createProductionGovernanceScheduleTracing(),
+        },
+      )
+    : null;
+const governanceScheduleCoordinator = governanceScheduleRunner
+  ? new GovernanceScheduleCoordinator(governanceScheduleRunner, logger, {
+      enabled: governanceScheduleEnabled,
+      reconciliationIntervalMs: config.governanceScheduleReconciliationIntervalMs ?? 1_000,
+    })
+  : null;
 const healthServer = createHealthServer(
   healthRedis,
   database.pool,
   logger,
   config.dependencyTimeoutMs,
+  governanceTallyDatabase ? { governanceTally: governanceTallyDatabase.pool } : {},
 );
 
+await governanceTallyRepository?.assertRestrictedRole();
 await healthRedis.connect();
 await heartbeat.start();
 manifestGenerationCoordinator.start();
@@ -316,6 +401,7 @@ if (config.compilerEnabled ?? true) worldCompilationCoordinator.start();
 outboxCoordinator.start();
 economyOfferCoordinator.start();
 if (config.commerceScheduleEnabled ?? true) commerceScheduleCoordinator.start();
+governanceScheduleCoordinator?.start();
 if (config.simulationContinuousEnabled) simulationCoordinator.start();
 await new Promise<void>((resolve, reject) => {
   healthServer.once('error', reject);
@@ -340,6 +426,7 @@ async function shutdown(signal: string): Promise<void> {
     await simulationWakeWorker?.close();
     if (config.simulationContinuousEnabled) await simulationCoordinator.stop();
     if (config.commerceScheduleEnabled ?? true) await commerceScheduleCoordinator.stop();
+    await governanceScheduleCoordinator?.stop();
     await economyOfferCoordinator.stop();
     await outboxCoordinator.stop();
     await smokeWorker.close();
@@ -348,6 +435,7 @@ async function shutdown(signal: string): Promise<void> {
     await healthRedis.quit().catch(() => undefined);
     await redis.quit();
     await database.pool.end();
+    await governanceTallyDatabase?.pool.end();
     await telemetryRuntime.shutdown();
     clearTimeout(timer);
     logger.info({ signal }, 'shutdown.completed');
@@ -361,6 +449,15 @@ async function shutdown(signal: string): Promise<void> {
 process.once('SIGINT', () => void shutdown('SIGINT'));
 process.once('SIGTERM', () => void shutdown('SIGTERM'));
 
+function requiredGovernanceTallyDatabaseUrl(
+  enabled: boolean,
+  configuredUrl: string | undefined,
+): string | null {
+  if (!enabled) return null;
+  if (!configuredUrl) throw new Error('GOVERNANCE_TALLY_DATABASE_URL_REQUIRED');
+  return configuredUrl;
+}
+
 export { createSmokeProcessor, createSmokeWorker } from './smoke-worker.js';
 export {
   discardWorkerNotifications,
@@ -372,6 +469,8 @@ export { PostgresWorldCompilationRepository } from './world-compilation-reposito
 export { PostgresOutboxRepository } from './outbox-repository.js';
 export { PostgresEconomyOfferRepository } from './economy-offer-repository.js';
 export { PostgresCommerceScheduleRepository } from './commerce-schedule-repository.js';
+export { PostgresGovernanceScheduleRepository } from './governance-schedule-repository.js';
+export { PostgresGovernanceRestrictedTallyRepository } from './governance-tally-repository.js';
 export {
   commerceNotificationsForEvent,
   commerceRealtimeChannelV1,
@@ -388,6 +487,12 @@ export {
   CommerceScheduleRunner,
   createProductionCommerceScheduleMetrics,
 } from './commerce-schedule-worker.js';
+export {
+  createProductionGovernanceScheduleMetrics,
+  createProductionGovernanceScheduleTracing,
+  GovernanceScheduleCoordinator,
+  GovernanceScheduleRunner,
+} from './governance-schedule-worker.js';
 export { OutboxCoordinator, OutboxRunner } from './outbox-worker.js';
 export {
   createManifestGenerationWakeProcessor,

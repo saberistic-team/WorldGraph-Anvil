@@ -5,6 +5,7 @@ import {
   MANIFEST_SCHEMA_VERSION,
   LEGACY_COMPILER_VERSION,
   PREVIOUS_COMPILER_VERSION,
+  RETAINED_COMPILER_VERSION,
   PRIMITIVE_SCHEMA_VERSION,
   canonicalJson,
   type ActiveMemberPrincipalV1,
@@ -13,6 +14,7 @@ import {
   type ExactPrimitiveInputV1,
   type LegacyCompilerInputBundleV1,
   type PreviousCompilerInputBundleV1,
+  type RetainedCompilerInputBundleV1,
   type PrimitiveDraftInput,
   type WorldManifestV1,
 } from '@worldgraph/contracts';
@@ -102,6 +104,19 @@ export function createLegacyCompilerInputBundle(
 }
 
 /** Produces the frozen 1.1 input identity for artifact-2 compatibility. */
+export function createRetainedCompilerInputBundle(
+  options: CreateCompilerInputBundleOptions,
+): RetainedCompilerInputBundleV1 {
+  const current = createCompilerInputBundle(options);
+  const provisional: RetainedCompilerInputBundleV1 = {
+    ...current,
+    compilerVersion: RETAINED_COMPILER_VERSION,
+    inputHash: '0'.repeat(64),
+  };
+  return { ...provisional, inputHash: compilerInputHash(provisional) };
+}
+
+/** Produces the frozen 1.2 input identity for artifact-3 compatibility. */
 export function createPreviousCompilerInputBundle(
   options: CreateCompilerInputBundleOptions,
 ): PreviousCompilerInputBundleV1 {

@@ -145,9 +145,9 @@ describe('PostgresEconomyQueryRepository economy summary', () => {
             plan_hash: Buffer.from('a'.repeat(64), 'hex'),
             projection_checksum: null,
             reconciliation_status: null,
-            source_kind: 'compiler_1_1',
+            source_kind: 'compiler_1_2',
             state_revision: '0',
-            version_compiler_version: '1.1.0',
+            version_compiler_version: '1.2.0',
             world_id: worldId,
           },
         ],
@@ -166,6 +166,11 @@ describe('PostgresEconomyQueryRepository economy summary', () => {
       lastReconciledAt: null,
       lastReconciledStateRevision: null,
       status: 'not_run',
+    });
+    expect(summary?.seedPlan).toEqual({
+      available: true,
+      hash: 'a'.repeat(64),
+      sourceKind: 'compiler_1_2',
     });
   });
 });

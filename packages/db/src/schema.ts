@@ -30,6 +30,10 @@ const bytea = customType<{ data: Buffer; driverData: Buffer }>({
   dataType: () => 'bytea',
 });
 
+const int8range = customType<{ data: string }>({
+  dataType: () => 'int8range',
+});
+
 const tsvector = customType<{ data: string }>({ dataType: () => 'tsvector' });
 const vector1536 = customType<{ data: number[]; driverData: string }>({
   dataType: () => 'extensions.vector(1536)',
@@ -2363,6 +2367,7 @@ export const commandRecords = pgTable(
     expectedWorldVersion: bigint('expected_world_version', { mode: 'bigint' }),
     expectedStateRevision: bigint('expected_state_revision', { mode: 'bigint' }),
     expectedAggregateVersion: bigint('expected_aggregate_version', { mode: 'bigint' }),
+    expectedTick: bigint('expected_tick', { mode: 'bigint' }),
     openedStateRevision: bigint('opened_state_revision', { mode: 'bigint' }),
     openedLedgerSequence: bigint('opened_ledger_sequence', { mode: 'bigint' }),
     openedEventSequence: bigint('opened_event_sequence', { mode: 'bigint' }),
@@ -3408,7 +3413,7 @@ export const compiledEconomySeedPlans = pgTable(
             and ${table.adoptedCommandId} is null and ${table.adoptedEventId} is null)
           or (${table.sourceKind} = 'compiler_1_2'
             and ${table.seedPlanSchemaVersion} = 2
-            and ${table.sourceCompilerVersion} = '1.2.0'
+            and ${table.sourceCompilerVersion} in ('1.2.0','1.3.0')
             and ${table.sourceAdapterId} = 'CompiledEconomySeedAdapterV2'
             and ${table.sourceAdapterVersion} = '1.0.0'
             and ${table.adoptedCommandId} is null and ${table.adoptedEventId} is null)
@@ -3675,7 +3680,13 @@ export const financialTransactions = pgTable(
     ),
     index('financial_transactions_commerce_timeline_idx')
       .on(table.worldId, table.occurredTick.desc(), table.createdAt.desc(), table.id.desc())
-      .where(sql`${table.transactionKind} in ('market_purchase', 'payroll', 'periodic_tax')`),
+      // This inverse set keeps the M08→M09 enum expansion atomic. Replace it
+      // before adding a future non-commerce transaction kind.
+      .where(
+        sql`${table.transactionKind} not in (
+          'initialization', 'issuance', 'transfer', 'asset_purchase', 'compensation'
+        )`,
+      ),
     check(
       'financial_transactions_tick_revision_valid',
       sql`${table.occurredTick} >= 0 and ${table.stateRevision} > 0`,
@@ -5283,7 +5294,7 @@ export const commerceCommandPayloadFacts = pgTable('commerce_command_payload_fac
 export const economyExpansionReconciliationRuns = pgTable('economy_expansion_reconciliation_runs', {
   id: uuid('id').primaryKey(),
   worldId: uuid('world_id').notNull(),
-  reconciliationSchemaVersion: integer('reconciliation_schema_version').default(2).notNull(),
+  reconciliationSchemaVersion: integer('reconciliation_schema_version').default(3).notNull(),
   sourceStateRevision: bigint('source_state_revision', { mode: 'bigint' }).notNull(),
   sourceEventSequence: bigint('source_event_sequence', { mode: 'bigint' }).notNull(),
   status: economyReconciliationRunStatus('status').notNull(),
@@ -5490,4 +5501,1024 @@ export const commerceProjectionRepairExecutions = pgTable('commerce_projection_r
   }).notNull(),
   resultingChecksum: bytea('resulting_checksum').notNull(),
   executedAt: timestamptz('executed_at').notNull(),
+});
+
+export const compiledGovernanceSeedPlans = pgTable('compiled_governance_seed_plans', {
+  id: uuid().primaryKey().notNull(),
+  worldId: uuid('world_id').notNull(),
+  worldVersionId: uuid('world_version_id').notNull(),
+  sourceKind: text('source_kind').notNull(),
+  sourceCompilerVersion: text('source_compiler_version').notNull(),
+  sourceArtifactHash: bytea('source_artifact_hash').notNull(),
+  governanceSeedPlanSchemaVersion: integer('governance_seed_plan_schema_version')
+    .default(1)
+    .notNull(),
+  canonicalPlan: jsonb('canonical_plan').notNull(),
+  planHash: bytea('plan_hash').notNull(),
+  adoptedCommandId: uuid('adopted_command_id'),
+  adoptedEventId: uuid('adopted_event_id'),
+  createdAt: timestamptz('created_at').defaultNow().notNull(),
+});
+
+export const worldGovernanceHeads = pgTable('world_governance_heads', {
+  worldId: uuid('world_id').primaryKey().notNull(),
+  sourceWorldVersionId: uuid('source_world_version_id').notNull(),
+  seedPlanHash: bytea('seed_plan_hash').notNull(),
+  governanceSchemaVersion: integer('governance_schema_version').default(1).notNull(),
+  projectionSchemaVersion: integer('projection_schema_version').default(1).notNull(),
+  checksum: bytea('checksum').notNull(),
+  rowVersion: bigint('row_version', { mode: 'bigint' }).default(1n).notNull(),
+  updatedStateRevision: bigint('updated_state_revision', { mode: 'bigint' }).notNull(),
+  initializedCommandId: uuid('initialized_command_id').notNull(),
+  initializedEventId: uuid('initialized_event_id').notNull(),
+  createdAt: timestamptz('created_at').defaultNow().notNull(),
+  updatedAt: timestamptz('updated_at').defaultNow().notNull(),
+});
+
+export const governingCharters = pgTable('governing_charters', {
+  id: uuid().primaryKey().notNull(),
+  worldId: uuid('world_id').notNull(),
+  stableKey: citext('stable_key').notNull(),
+  jurisdictionEntityId: uuid('jurisdiction_entity_id').notNull(),
+  rowVersion: bigint('row_version', { mode: 'bigint' }).default(1n).notNull(),
+  createdCommandId: uuid('created_command_id').notNull(),
+  createdEventId: uuid('created_event_id').notNull(),
+  createdStateRevision: bigint('created_state_revision', { mode: 'bigint' }).notNull(),
+  createdAt: timestamptz('created_at').defaultNow().notNull(),
+});
+
+export const governingCharterVersions = pgTable('governing_charter_versions', {
+  id: uuid().primaryKey().notNull(),
+  worldId: uuid('world_id').notNull(),
+  charterId: uuid('charter_id').notNull(),
+  charterVersion: integer('charter_version').notNull(),
+  sourceWorldVersionId: uuid('source_world_version_id').notNull(),
+  seedPlanHash: bytea('seed_plan_hash').notNull(),
+  policyDslVersion: integer('policy_dsl_version').default(1).notNull(),
+  canonicalPolicyDocument: jsonb('canonical_policy_document').notNull(),
+  checksum: bytea('checksum').notNull(),
+  effectiveFromTick: bigint('effective_from_tick', { mode: 'bigint' }).notNull(),
+  declaredUntilTick: bigint('declared_until_tick', { mode: 'bigint' }),
+  provenance: jsonb().default({}).notNull(),
+  createdCommandId: uuid('created_command_id').notNull(),
+  createdEventId: uuid('created_event_id').notNull(),
+  createdStateRevision: bigint('created_state_revision', { mode: 'bigint' }).notNull(),
+  createdAt: timestamptz('created_at').defaultNow().notNull(),
+});
+
+export const charterAuthorityIntervals = pgTable('charter_authority_intervals', {
+  id: uuid().primaryKey().notNull(),
+  worldId: uuid('world_id').notNull(),
+  charterId: uuid('charter_id').notNull(),
+  charterVersionId: uuid('charter_version_id').notNull(),
+  effectiveTicks: int8range('effective_ticks').notNull(),
+  createdCommandId: uuid('created_command_id').notNull(),
+  updatedCommandId: uuid('updated_command_id').notNull(),
+  rowVersion: bigint('row_version', { mode: 'bigint' }).default(1n).notNull(),
+  createdAt: timestamptz('created_at').defaultNow().notNull(),
+  updatedAt: timestamptz('updated_at').defaultNow().notNull(),
+});
+
+export const institutions = pgTable('institutions', {
+  id: uuid().primaryKey().notNull(),
+  worldId: uuid('world_id').notNull(),
+  entityId: uuid('entity_id').notNull(),
+  charterVersionId: uuid('charter_version_id').notNull(),
+  jurisdictionEntityId: uuid('jurisdiction_entity_id').notNull(),
+  stableKey: citext('stable_key').notNull(),
+  institutionType: text('institution_type').notNull(),
+  status: text().default('active').notNull(),
+  rowVersion: bigint('row_version', { mode: 'bigint' }).default(1n).notNull(),
+  createdCommandId: uuid('created_command_id').notNull(),
+  createdEventId: uuid('created_event_id').notNull(),
+  createdStateRevision: bigint('created_state_revision', { mode: 'bigint' }).notNull(),
+  createdAt: timestamptz('created_at').defaultNow().notNull(),
+  updatedAt: timestamptz('updated_at').defaultNow().notNull(),
+});
+
+export const institutionPowers = pgTable('institution_powers', {
+  id: uuid().primaryKey().notNull(),
+  worldId: uuid('world_id').notNull(),
+  institutionId: uuid('institution_id').notNull(),
+  charterVersionId: uuid('charter_version_id').notNull(),
+  powerKey: text('power_key').notNull(),
+  actionCode: text('action_code').notNull(),
+  resourceType: text('resource_type').notNull(),
+  scopePolicy: jsonb('scope_policy').notNull(),
+  policyDslVersion: integer('policy_dsl_version').default(1).notNull(),
+  checksum: bytea('checksum').notNull(),
+  createdCommandId: uuid('created_command_id').notNull(),
+  createdEventId: uuid('created_event_id').notNull(),
+  createdAt: timestamptz('created_at').defaultNow().notNull(),
+});
+
+export const laws = pgTable('laws', {
+  id: uuid().primaryKey().notNull(),
+  worldId: uuid('world_id').notNull(),
+  jurisdictionEntityId: uuid('jurisdiction_entity_id').notNull(),
+  stableKey: citext('stable_key').notNull(),
+  title: text().notNull(),
+  createdCommandId: uuid('created_command_id').notNull(),
+  createdEventId: uuid('created_event_id').notNull(),
+  createdStateRevision: bigint('created_state_revision', { mode: 'bigint' }).notNull(),
+  createdAt: timestamptz('created_at').defaultNow().notNull(),
+});
+
+export const lawVersions = pgTable('law_versions', {
+  id: uuid().primaryKey().notNull(),
+  worldId: uuid('world_id').notNull(),
+  lawId: uuid('law_id').notNull(),
+  lawVersion: integer('law_version').notNull(),
+  versionKind: text('version_kind').notNull(),
+  initialStatus: text('initial_status').default('scheduled').notNull(),
+  title: text().notNull(),
+  summary: text().notNull(),
+  policyAst: jsonb('policy_ast').notNull(),
+  actionEffects: jsonb('action_effects').notNull(),
+  policyDslVersion: integer('policy_dsl_version').default(1).notNull(),
+  supersedesVersionId: uuid('supersedes_version_id'),
+  sourceProposalResultId: uuid('source_proposal_result_id'),
+  sourceActionOrdinal: integer('source_action_ordinal'),
+  effectiveFromTick: bigint('effective_from_tick', { mode: 'bigint' }).notNull(),
+  checksum: bytea('checksum').notNull(),
+  createdCommandId: uuid('created_command_id').notNull(),
+  createdEventId: uuid('created_event_id').notNull(),
+  createdStateRevision: bigint('created_state_revision', { mode: 'bigint' }).notNull(),
+  createdAt: timestamptz('created_at').defaultNow().notNull(),
+});
+
+export const lawEffectivityTransitions = pgTable('law_effectivity_transitions', {
+  id: uuid().primaryKey().notNull(),
+  worldId: uuid('world_id').notNull(),
+  lawId: uuid('law_id').notNull(),
+  lawVersionId: uuid('law_version_id').notNull(),
+  fromStatus: text('from_status'),
+  toStatus: text('to_status').notNull(),
+  effectiveTick: bigint('effective_tick', { mode: 'bigint' }).notNull(),
+  commandId: uuid('command_id').notNull(),
+  eventId: uuid('event_id').notNull(),
+  stateRevision: bigint('state_revision', { mode: 'bigint' }).notNull(),
+  checksum: bytea('checksum').notNull(),
+  createdAt: timestamptz('created_at').defaultNow().notNull(),
+});
+
+export const lawAuthorityIntervals = pgTable('law_authority_intervals', {
+  id: uuid().primaryKey().notNull(),
+  worldId: uuid('world_id').notNull(),
+  lawId: uuid('law_id').notNull(),
+  lawVersionId: uuid('law_version_id').notNull(),
+  effectiveTicks: int8range('effective_ticks').notNull(),
+  createdCommandId: uuid('created_command_id').notNull(),
+  updatedCommandId: uuid('updated_command_id').notNull(),
+  rowVersion: bigint('row_version', { mode: 'bigint' }).default(1n).notNull(),
+  createdAt: timestamptz('created_at').defaultNow().notNull(),
+  updatedAt: timestamptz('updated_at').defaultNow().notNull(),
+});
+
+export const politicalOffices = pgTable('political_offices', {
+  id: uuid().primaryKey().notNull(),
+  worldId: uuid('world_id').notNull(),
+  institutionId: uuid('institution_id').notNull(),
+  charterVersionId: uuid('charter_version_id').notNull(),
+  stableKey: citext('stable_key').notNull(),
+  title: text().notNull(),
+  selectionMethod: text('selection_method').notNull(),
+  seatCount: integer('seat_count').notNull(),
+  termTicks: bigint('term_ticks', { mode: 'bigint' }).notNull(),
+  eligibilityPolicy: jsonb('eligibility_policy').notNull(),
+  tiePolicy: text('tie_policy').notNull(),
+  vacancyPolicy: text('vacancy_policy').notNull(),
+  rowVersion: bigint('row_version', { mode: 'bigint' }).default(1n).notNull(),
+  createdCommandId: uuid('created_command_id').notNull(),
+  createdEventId: uuid('created_event_id').notNull(),
+  createdStateRevision: bigint('created_state_revision', { mode: 'bigint' }).notNull(),
+  createdAt: timestamptz('created_at').defaultNow().notNull(),
+  updatedAt: timestamptz('updated_at').defaultNow().notNull(),
+});
+
+export const politicalOfficeSeats = pgTable('political_office_seats', {
+  id: uuid().primaryKey().notNull(),
+  worldId: uuid('world_id').notNull(),
+  officeId: uuid('office_id').notNull(),
+  seatOrdinal: integer('seat_ordinal').notNull(),
+  stableKey: citext('stable_key').notNull(),
+  status: text().default('active').notNull(),
+  createdCommandId: uuid('created_command_id').notNull(),
+  createdEventId: uuid('created_event_id').notNull(),
+  createdAt: timestamptz('created_at').defaultNow().notNull(),
+});
+
+export const officePowers = pgTable(
+  'office_powers',
+  {
+    id: uuid().primaryKey().notNull(),
+    worldId: uuid('world_id').notNull(),
+    officeId: uuid('office_id').notNull(),
+    charterVersionId: uuid('charter_version_id').notNull(),
+    powerKey: text('power_key').notNull(),
+    actionCode: text('action_code').notNull(),
+    resourceType: text('resource_type').notNull(),
+    scopePolicy: jsonb('scope_policy').notNull(),
+    policyDslVersion: integer('policy_dsl_version').default(1).notNull(),
+    checksum: bytea('checksum').notNull(),
+    createdCommandId: uuid('created_command_id').notNull(),
+    createdEventId: uuid('created_event_id').notNull(),
+    createdAt: timestamptz('created_at').defaultNow().notNull(),
+  },
+  (table) => [
+    unique('office_powers_world_charter_identity').on(
+      table.worldId,
+      table.id,
+      table.charterVersionId,
+    ),
+  ],
+);
+
+export const officePowerDelegations = pgTable('office_power_delegations', {
+  id: uuid().primaryKey().notNull(),
+  worldId: uuid('world_id').notNull(),
+  officePowerId: uuid('office_power_id').notNull(),
+  charterVersionId: uuid('charter_version_id').notNull(),
+  granteeOrganizationEntityId: uuid('grantee_organization_entity_id').notNull(),
+  delegationKey: text('delegation_key').notNull(),
+  checksum: bytea('checksum').notNull(),
+  createdCommandId: uuid('created_command_id').notNull(),
+  createdEventId: uuid('created_event_id').notNull(),
+  createdAt: timestamptz('created_at').defaultNow().notNull(),
+});
+
+export const proposals = pgTable('proposals', {
+  id: uuid().primaryKey().notNull(),
+  worldId: uuid('world_id').notNull(),
+  institutionId: uuid('institution_id').notNull(),
+  jurisdictionEntityId: uuid('jurisdiction_entity_id').notNull(),
+  proposerEntityId: uuid('proposer_entity_id').notNull(),
+  proposalType: text('proposal_type').notNull(),
+  proposalSchemaVersion: integer('proposal_schema_version').default(1).notNull(),
+  title: text().notNull(),
+  body: text().notNull(),
+  status: text().default('draft').notNull(),
+  sponsorshipClosesTick: bigint('sponsorship_closes_tick', { mode: 'bigint' }).notNull(),
+  debateClosesTick: bigint('debate_closes_tick', { mode: 'bigint' }).notNull(),
+  votingOpensTick: bigint('voting_opens_tick', { mode: 'bigint' }).notNull(),
+  votingClosesTick: bigint('voting_closes_tick', { mode: 'bigint' }).notNull(),
+  minimumSponsors: integer('minimum_sponsors').notNull(),
+  quorumNumerator: integer('quorum_numerator').notNull(),
+  quorumDenominator: integer('quorum_denominator').notNull(),
+  thresholdNumerator: integer('threshold_numerator').notNull(),
+  thresholdDenominator: integer('threshold_denominator').notNull(),
+  ballotMode: text('ballot_mode').notNull(),
+  ballotDisclosure: text('ballot_disclosure').notNull(),
+  allowBallotReplacement: boolean('allow_ballot_replacement').default(false).notNull(),
+  targetVersions: jsonb('target_versions').default({}).notNull(),
+  aggregateVersion: bigint('aggregate_version', { mode: 'bigint' }).default(1n).notNull(),
+  createdCommandId: uuid('created_command_id').notNull(),
+  createdEventId: uuid('created_event_id').notNull(),
+  createdStateRevision: bigint('created_state_revision', { mode: 'bigint' }).notNull(),
+  createdAt: timestamptz('created_at').defaultNow().notNull(),
+  updatedAt: timestamptz('updated_at').defaultNow().notNull(),
+});
+
+export const proposalActions = pgTable('proposal_actions', {
+  id: uuid().primaryKey().notNull(),
+  worldId: uuid('world_id').notNull(),
+  proposalId: uuid('proposal_id').notNull(),
+  actionOrdinal: integer('action_ordinal').notNull(),
+  actionKind: text('action_kind').notNull(),
+  actionSchemaVersion: integer('action_schema_version').default(1).notNull(),
+  targetKind: text('target_kind'),
+  targetId: uuid('target_id'),
+  expectedTargetVersion: bigint('expected_target_version', { mode: 'bigint' }),
+  actionPayload: jsonb('action_payload').notNull(),
+  provenance: jsonb().default({}).notNull(),
+  checksum: bytea('checksum').notNull(),
+  createdCommandId: uuid('created_command_id').notNull(),
+  createdEventId: uuid('created_event_id').notNull(),
+  createdAt: timestamptz('created_at').defaultNow().notNull(),
+});
+
+export const proposalSponsors = pgTable('proposal_sponsors', {
+  id: uuid().primaryKey().notNull(),
+  worldId: uuid('world_id').notNull(),
+  proposalId: uuid('proposal_id').notNull(),
+  sponsorEntityId: uuid('sponsor_entity_id').notNull(),
+  sponsoredTick: bigint('sponsored_tick', { mode: 'bigint' }).notNull(),
+  commandId: uuid('command_id').notNull(),
+  eventId: uuid('event_id').notNull(),
+  stateRevision: bigint('state_revision', { mode: 'bigint' }).notNull(),
+  createdAt: timestamptz('created_at').defaultNow().notNull(),
+});
+
+export const proposalTransitions = pgTable('proposal_transitions', {
+  id: uuid().primaryKey().notNull(),
+  worldId: uuid('world_id').notNull(),
+  proposalId: uuid('proposal_id').notNull(),
+  fromStatus: text('from_status'),
+  toStatus: text('to_status').notNull(),
+  effectiveTick: bigint('effective_tick', { mode: 'bigint' }).notNull(),
+  aggregateVersion: bigint('aggregate_version', { mode: 'bigint' }).notNull(),
+  reasonCode: text('reason_code').notNull(),
+  commandId: uuid('command_id').notNull(),
+  eventId: uuid('event_id').notNull(),
+  stateRevision: bigint('state_revision', { mode: 'bigint' }).notNull(),
+  checksum: bytea('checksum').notNull(),
+  createdAt: timestamptz('created_at').defaultNow().notNull(),
+});
+
+export const elections = pgTable('elections', {
+  id: uuid().primaryKey().notNull(),
+  worldId: uuid('world_id').notNull(),
+  institutionId: uuid('institution_id').notNull(),
+  officeId: uuid('office_id').notNull(),
+  seatId: uuid('seat_id').notNull(),
+  electionKind: text('election_kind').notNull(),
+  status: text().default('nominations_scheduled').notNull(),
+  nominationOpensTick: bigint('nomination_opens_tick', { mode: 'bigint' }).notNull(),
+  nominationClosesTick: bigint('nomination_closes_tick', { mode: 'bigint' }).notNull(),
+  votingOpensTick: bigint('voting_opens_tick', { mode: 'bigint' }).notNull(),
+  votingClosesTick: bigint('voting_closes_tick', { mode: 'bigint' }).notNull(),
+  certificationTick: bigint('certification_tick', { mode: 'bigint' }).notNull(),
+  termStartsTick: bigint('term_starts_tick', { mode: 'bigint' }).notNull(),
+  quorumNumerator: integer('quorum_numerator').notNull(),
+  quorumDenominator: integer('quorum_denominator').notNull(),
+  tieRule: text('tie_rule').notNull(),
+  ballotMode: text('ballot_mode').notNull(),
+  ballotDisclosure: text('ballot_disclosure').notNull(),
+  allowBallotReplacement: boolean('allow_ballot_replacement').default(false).notNull(),
+  electionRuleSnapshot: jsonb('election_rule_snapshot').notNull(),
+  aggregateVersion: bigint('aggregate_version', { mode: 'bigint' }).default(1n).notNull(),
+  createdCommandId: uuid('created_command_id').notNull(),
+  createdEventId: uuid('created_event_id').notNull(),
+  createdStateRevision: bigint('created_state_revision', { mode: 'bigint' }).notNull(),
+  createdAt: timestamptz('created_at').defaultNow().notNull(),
+  updatedAt: timestamptz('updated_at').defaultNow().notNull(),
+});
+
+export const governanceContests = pgTable('governance_contests', {
+  id: uuid().primaryKey().notNull(),
+  worldId: uuid('world_id').notNull(),
+  contestKind: text('contest_kind').notNull(),
+  ballotMode: text('ballot_mode').notNull(),
+  ballotDisclosure: text('ballot_disclosure').notNull(),
+  status: text().default('scheduled').notNull(),
+  opensTick: bigint('opens_tick', { mode: 'bigint' }).notNull(),
+  closesTick: bigint('closes_tick', { mode: 'bigint' }).notNull(),
+  allowReplacement: boolean('allow_replacement').default(false).notNull(),
+  aggregateVersion: bigint('aggregate_version', { mode: 'bigint' }).default(1n).notNull(),
+  createdCommandId: uuid('created_command_id').notNull(),
+  createdEventId: uuid('created_event_id').notNull(),
+  createdStateRevision: bigint('created_state_revision', { mode: 'bigint' }).notNull(),
+  createdAt: timestamptz('created_at').defaultNow().notNull(),
+  updatedAt: timestamptz('updated_at').defaultNow().notNull(),
+});
+
+export const proposalContests = pgTable('proposal_contests', {
+  contestId: uuid('contest_id').primaryKey().notNull(),
+  worldId: uuid('world_id').notNull(),
+  proposalId: uuid('proposal_id').notNull(),
+  question: text().notNull(),
+});
+
+export const electionContests = pgTable('election_contests', {
+  contestId: uuid('contest_id').primaryKey().notNull(),
+  worldId: uuid('world_id').notNull(),
+  electionId: uuid('election_id').notNull(),
+  officeId: uuid('office_id').notNull(),
+  seatId: uuid('seat_id').notNull(),
+  contestOrdinal: integer('contest_ordinal').notNull(),
+  seatsToFill: integer('seats_to_fill').default(1).notNull(),
+});
+
+export const candidacies = pgTable('candidacies', {
+  id: uuid().primaryKey().notNull(),
+  worldId: uuid('world_id').notNull(),
+  electionId: uuid('election_id').notNull(),
+  contestId: uuid('contest_id').notNull(),
+  candidateEntityId: uuid('candidate_entity_id').notNull(),
+  status: text().default('nominated').notNull(),
+  nominationTick: bigint('nomination_tick', { mode: 'bigint' }).notNull(),
+  aggregateVersion: bigint('aggregate_version', { mode: 'bigint' }).default(1n).notNull(),
+  nominatedCommandId: uuid('nominated_command_id').notNull(),
+  nominatedEventId: uuid('nominated_event_id').notNull(),
+  acceptedCommandId: uuid('accepted_command_id'),
+  acceptedEventId: uuid('accepted_event_id'),
+  createdAt: timestamptz('created_at').defaultNow().notNull(),
+  updatedAt: timestamptz('updated_at').defaultNow().notNull(),
+});
+
+export const candidacyTransitions = pgTable('candidacy_transitions', {
+  id: uuid().primaryKey().notNull(),
+  worldId: uuid('world_id').notNull(),
+  candidacyId: uuid('candidacy_id').notNull(),
+  fromStatus: text('from_status'),
+  toStatus: text('to_status').notNull(),
+  effectiveTick: bigint('effective_tick', { mode: 'bigint' }).notNull(),
+  aggregateVersion: bigint('aggregate_version', { mode: 'bigint' }).notNull(),
+  commandId: uuid('command_id').notNull(),
+  eventId: uuid('event_id').notNull(),
+  stateRevision: bigint('state_revision', { mode: 'bigint' }).notNull(),
+  checksum: bytea('checksum').notNull(),
+  createdAt: timestamptz('created_at').defaultNow().notNull(),
+});
+
+export const eligibilitySnapshots = pgTable('eligibility_snapshots', {
+  id: uuid().primaryKey().notNull(),
+  worldId: uuid('world_id').notNull(),
+  contestId: uuid('contest_id').notNull(),
+  ruleSchemaVersion: integer('rule_schema_version').default(1).notNull(),
+  policyDslVersion: integer('policy_dsl_version').default(1).notNull(),
+  snapshotTick: bigint('snapshot_tick', { mode: 'bigint' }).notNull(),
+  sourceStateRevision: bigint('source_state_revision', { mode: 'bigint' }).notNull(),
+  sourceMembershipCursor: bigint('source_membership_cursor', { mode: 'bigint' }).notNull(),
+  eligibleCount: integer('eligible_count').notNull(),
+  ruleSnapshot: jsonb('rule_snapshot').notNull(),
+  checksum: bytea('checksum').notNull(),
+  generatedCommandId: uuid('generated_command_id').notNull(),
+  generatedEventId: uuid('generated_event_id').notNull(),
+  generatedAt: timestamptz('generated_at').defaultNow().notNull(),
+});
+
+export const eligibilitySnapshotMembers = pgTable('eligibility_snapshot_members', {
+  id: uuid().primaryKey().notNull(),
+  worldId: uuid('world_id').notNull(),
+  snapshotId: uuid('snapshot_id').notNull(),
+  contestId: uuid('contest_id').notNull(),
+  voterEntityId: uuid('voter_entity_id').notNull(),
+  votingWeight: integer('voting_weight').default(1).notNull(),
+  eligibilityBasis: jsonb('eligibility_basis').notNull(),
+  memberHash: bytea('member_hash').notNull(),
+  createdAt: timestamptz('created_at').defaultNow().notNull(),
+});
+
+export const ballotParticipation = pgTable('ballot_participation', {
+  id: uuid().primaryKey().notNull(),
+  worldId: uuid('world_id').notNull(),
+  contestId: uuid('contest_id').notNull(),
+  eligibilitySnapshotId: uuid('eligibility_snapshot_id').notNull(),
+  voterEntityId: uuid('voter_entity_id').notNull(),
+  ballotMode: text('ballot_mode').notNull(),
+  currentRevision: integer('current_revision').notNull(),
+  aggregateVersion: bigint('aggregate_version', { mode: 'bigint' }).notNull(),
+  firstCastTick: bigint('first_cast_tick', { mode: 'bigint' }).notNull(),
+  lastCastTick: bigint('last_cast_tick', { mode: 'bigint' }).notNull(),
+  createdAt: timestamptz('created_at').defaultNow().notNull(),
+  updatedAt: timestamptz('updated_at').defaultNow().notNull(),
+});
+
+export const ballotReceipts = pgTable('ballot_receipts', {
+  id: uuid().primaryKey().notNull(),
+  worldId: uuid('world_id').notNull(),
+  contestId: uuid('contest_id').notNull(),
+  participationId: uuid('participation_id').notNull(),
+  revision: integer().notNull(),
+  receiptHash: bytea('receipt_hash').notNull(),
+  choiceHash: bytea('choice_hash').notNull(),
+  castTick: bigint('cast_tick', { mode: 'bigint' }).notNull(),
+  issuedAt: timestamptz('issued_at').defaultNow().notNull(),
+});
+
+export const ballotChoiceRevisions = pgTable('ballot_choice_revisions', {
+  id: uuid().primaryKey().notNull(),
+  worldId: uuid('world_id').notNull(),
+  contestId: uuid('contest_id').notNull(),
+  participationId: uuid('participation_id').notNull(),
+  receiptId: uuid('receipt_id').notNull(),
+  revision: integer().notNull(),
+  storageMode: text('storage_mode').notNull(),
+  choiceSchemaVersion: integer('choice_schema_version').default(1).notNull(),
+  choiceHash: bytea('choice_hash').notNull(),
+  replacesRevisionId: uuid('replaces_revision_id'),
+  castCommandId: uuid('cast_command_id').notNull(),
+  castEventId: uuid('cast_event_id').notNull(),
+  castStateRevision: bigint('cast_state_revision', { mode: 'bigint' }).notNull(),
+  castTick: bigint('cast_tick', { mode: 'bigint' }).notNull(),
+  createdAt: timestamptz('created_at').defaultNow().notNull(),
+});
+
+export const ballotEffectiveRevisions = pgTable('ballot_effective_revisions', {
+  participationId: uuid('participation_id').primaryKey().notNull(),
+  worldId: uuid('world_id').notNull(),
+  contestId: uuid('contest_id').notNull(),
+  choiceRevisionId: uuid('choice_revision_id').notNull(),
+  effectiveRevision: integer('effective_revision').notNull(),
+  rowVersion: bigint('row_version', { mode: 'bigint' }).notNull(),
+  updatedCommandId: uuid('updated_command_id').notNull(),
+  updatedAt: timestamptz('updated_at').defaultNow().notNull(),
+});
+
+export const publicBallotChoices = pgTable('public_ballot_choices', {
+  choiceRevisionId: uuid('choice_revision_id').primaryKey().notNull(),
+  worldId: uuid('world_id').notNull(),
+  contestId: uuid('contest_id').notNull(),
+  participationId: uuid('participation_id').notNull(),
+  voterEntityId: uuid('voter_entity_id').notNull(),
+  choicePayload: jsonb('choice_payload').notNull(),
+  choiceHash: bytea('choice_hash').notNull(),
+  createdAt: timestamptz('created_at').defaultNow().notNull(),
+});
+
+export const secretBallotChoices = pgTable('secret_ballot_choices', {
+  choiceRevisionId: uuid('choice_revision_id').primaryKey().notNull(),
+  worldId: uuid('world_id').notNull(),
+  contestId: uuid('contest_id').notNull(),
+  participationId: uuid('participation_id').notNull(),
+  choicePayload: jsonb('choice_payload').notNull(),
+  choiceHash: bytea('choice_hash').notNull(),
+  linkageNonceHash: bytea('linkage_nonce_hash').notNull(),
+  createdAt: timestamptz('created_at').defaultNow().notNull(),
+});
+
+export const proposalTallies = pgTable('proposal_tallies', {
+  id: uuid().primaryKey().notNull(),
+  worldId: uuid('world_id').notNull(),
+  contestId: uuid('contest_id').notNull(),
+  proposalId: uuid('proposal_id').notNull(),
+  eligibilitySnapshotId: uuid('eligibility_snapshot_id').notNull(),
+  tallyVersion: integer('tally_version').notNull(),
+  algorithmVersion: text('algorithm_version').notNull(),
+  eligibleCount: integer('eligible_count').notNull(),
+  participatingCount: integer('participating_count').notNull(),
+  quorumRequired: integer('quorum_required').notNull(),
+  approvalRequired: integer('approval_required').notNull(),
+  inputChecksum: bytea('input_checksum').notNull(),
+  outputChecksum: bytea('output_checksum').notNull(),
+  recountOfTallyId: uuid('recount_of_tally_id'),
+  talliedTick: bigint('tallied_tick', { mode: 'bigint' }).notNull(),
+  talliedAt: timestamptz('tallied_at').defaultNow().notNull(),
+});
+
+export const proposalTallyCounts = pgTable('proposal_tally_counts', {
+  id: uuid().primaryKey().notNull(),
+  worldId: uuid('world_id').notNull(),
+  tallyId: uuid('tally_id').notNull(),
+  choiceCode: text('choice_code').notNull(),
+  ballotCount: integer('ballot_count').notNull(),
+  weightedCount: bigint('weighted_count', { mode: 'bigint' }).notNull(),
+});
+
+export const proposalResults = pgTable('proposal_results', {
+  id: uuid().primaryKey().notNull(),
+  worldId: uuid('world_id').notNull(),
+  contestId: uuid('contest_id').notNull(),
+  proposalId: uuid('proposal_id').notNull(),
+  tallyId: uuid('tally_id').notNull(),
+  outcome: text().notNull(),
+  quorumMet: boolean('quorum_met').notNull(),
+  thresholdMet: boolean('threshold_met').notNull(),
+  resultSchemaVersion: integer('result_schema_version').default(1).notNull(),
+  resultChecksum: bytea('result_checksum').notNull(),
+  certifiedCommandId: uuid('certified_command_id').notNull(),
+  certifiedEventId: uuid('certified_event_id').notNull(),
+  certifiedStateRevision: bigint('certified_state_revision', { mode: 'bigint' }).notNull(),
+  certifiedTick: bigint('certified_tick', { mode: 'bigint' }).notNull(),
+  repairOfResultId: uuid('repair_of_result_id'),
+  certifiedAt: timestamptz('certified_at').defaultNow().notNull(),
+});
+
+export const electionTallies = pgTable('election_tallies', {
+  id: uuid().primaryKey().notNull(),
+  worldId: uuid('world_id').notNull(),
+  contestId: uuid('contest_id').notNull(),
+  electionId: uuid('election_id').notNull(),
+  eligibilitySnapshotId: uuid('eligibility_snapshot_id').notNull(),
+  tallyVersion: integer('tally_version').notNull(),
+  algorithmVersion: text('algorithm_version').notNull(),
+  eligibleCount: integer('eligible_count').notNull(),
+  participatingCount: integer('participating_count').notNull(),
+  inputChecksum: bytea('input_checksum').notNull(),
+  outputChecksum: bytea('output_checksum').notNull(),
+  recountOfTallyId: uuid('recount_of_tally_id'),
+  talliedTick: bigint('tallied_tick', { mode: 'bigint' }).notNull(),
+  talliedAt: timestamptz('tallied_at').defaultNow().notNull(),
+});
+
+export const electionTallyCounts = pgTable('election_tally_counts', {
+  id: uuid().primaryKey().notNull(),
+  worldId: uuid('world_id').notNull(),
+  tallyId: uuid('tally_id').notNull(),
+  candidacyId: uuid('candidacy_id'),
+  countKind: text('count_kind').notNull(),
+  ballotCount: integer('ballot_count').notNull(),
+  weightedCount: bigint('weighted_count', { mode: 'bigint' }).notNull(),
+});
+
+export const electionResults = pgTable('election_results', {
+  id: uuid().primaryKey().notNull(),
+  worldId: uuid('world_id').notNull(),
+  contestId: uuid('contest_id').notNull(),
+  electionId: uuid('election_id').notNull(),
+  tallyId: uuid('tally_id').notNull(),
+  outcome: text().notNull(),
+  winningCandidacyId: uuid('winning_candidacy_id'),
+  resultSchemaVersion: integer('result_schema_version').default(1).notNull(),
+  resultChecksum: bytea('result_checksum').notNull(),
+  certifiedCommandId: uuid('certified_command_id').notNull(),
+  certifiedEventId: uuid('certified_event_id').notNull(),
+  certifiedStateRevision: bigint('certified_state_revision', { mode: 'bigint' }).notNull(),
+  certifiedTick: bigint('certified_tick', { mode: 'bigint' }).notNull(),
+  repairOfResultId: uuid('repair_of_result_id'),
+  certifiedAt: timestamptz('certified_at').defaultNow().notNull(),
+});
+
+export const officeTerms = pgTable('office_terms', {
+  id: uuid().primaryKey().notNull(),
+  worldId: uuid('world_id').notNull(),
+  officeId: uuid('office_id').notNull(),
+  seatId: uuid('seat_id').notNull(),
+  holderEntityId: uuid('holder_entity_id').notNull(),
+  sourceKind: text('source_kind').notNull(),
+  sourceElectionResultId: uuid('source_election_result_id'),
+  sourceProposalResultId: uuid('source_proposal_result_id'),
+  status: text().default('scheduled').notNull(),
+  startsTick: bigint('starts_tick', { mode: 'bigint' }).notNull(),
+  plannedEndsTick: bigint('planned_ends_tick', { mode: 'bigint' }).notNull(),
+  termNumber: integer('term_number').notNull(),
+  checksum: bytea('checksum').notNull(),
+  createdCommandId: uuid('created_command_id').notNull(),
+  createdEventId: uuid('created_event_id').notNull(),
+  createdStateRevision: bigint('created_state_revision', { mode: 'bigint' }).notNull(),
+  createdAt: timestamptz('created_at').defaultNow().notNull(),
+});
+
+export const officeTermTransitions = pgTable('office_term_transitions', {
+  id: uuid().primaryKey().notNull(),
+  worldId: uuid('world_id').notNull(),
+  termId: uuid('term_id').notNull(),
+  fromStatus: text('from_status'),
+  toStatus: text('to_status').notNull(),
+  effectiveTick: bigint('effective_tick', { mode: 'bigint' }).notNull(),
+  reasonCode: text('reason_code').notNull(),
+  commandId: uuid('command_id').notNull(),
+  eventId: uuid('event_id').notNull(),
+  stateRevision: bigint('state_revision', { mode: 'bigint' }).notNull(),
+  checksum: bytea('checksum').notNull(),
+  createdAt: timestamptz('created_at').defaultNow().notNull(),
+});
+
+export const officeSeatAuthorityIntervals = pgTable('office_seat_authority_intervals', {
+  id: uuid().primaryKey().notNull(),
+  worldId: uuid('world_id').notNull(),
+  officeId: uuid('office_id').notNull(),
+  seatId: uuid('seat_id').notNull(),
+  termId: uuid('term_id').notNull(),
+  holderEntityId: uuid('holder_entity_id').notNull(),
+  effectiveTicks: int8range('effective_ticks').notNull(),
+  createdCommandId: uuid('created_command_id').notNull(),
+  updatedCommandId: uuid('updated_command_id').notNull(),
+  rowVersion: bigint('row_version', { mode: 'bigint' }).default(1n).notNull(),
+  createdAt: timestamptz('created_at').defaultNow().notNull(),
+  updatedAt: timestamptz('updated_at').defaultNow().notNull(),
+});
+
+export const proposalEnactments = pgTable('proposal_enactments', {
+  id: uuid().primaryKey().notNull(),
+  worldId: uuid('world_id').notNull(),
+  proposalId: uuid('proposal_id').notNull(),
+  proposalResultId: uuid('proposal_result_id').notNull(),
+  enactmentAttempt: integer('enactment_attempt').notNull(),
+  status: text().notNull(),
+  failureCode: text('failure_code'),
+  inputChecksum: bytea('input_checksum').notNull(),
+  outputChecksum: bytea('output_checksum'),
+  commandId: uuid('command_id').notNull(),
+  eventId: uuid('event_id').notNull(),
+  stateRevision: bigint('state_revision', { mode: 'bigint' }).notNull(),
+  enactedTick: bigint('enacted_tick', { mode: 'bigint' }).notNull(),
+  createdAt: timestamptz('created_at').defaultNow().notNull(),
+});
+
+export const proposalActionEnactments = pgTable('proposal_action_enactments', {
+  id: uuid().primaryKey().notNull(),
+  worldId: uuid('world_id').notNull(),
+  proposalEnactmentId: uuid('proposal_enactment_id').notNull(),
+  proposalActionId: uuid('proposal_action_id').notNull(),
+  effectKind: text('effect_kind').notNull(),
+  effectId: uuid('effect_id').notNull(),
+  effectVersion: bigint('effect_version', { mode: 'bigint' }).notNull(),
+  effectChecksum: bytea('effect_checksum').notNull(),
+  createdAt: timestamptz('created_at').defaultNow().notNull(),
+});
+
+export const governanceAuthorityDecisions = pgTable('governance_authority_decisions', {
+  id: uuid().primaryKey().notNull(),
+  worldId: uuid('world_id').notNull(),
+  commandId: uuid('command_id').notNull(),
+  actorMode: text('actor_mode').notNull(),
+  actorType: text('actor_type').notNull(),
+  actorId: text('actor_id').notNull(),
+  actorEntityId: uuid('actor_entity_id'),
+  actionCode: text('action_code').notNull(),
+  resourceType: text('resource_type').notNull(),
+  resourceId: text('resource_id').notNull(),
+  evaluatedTick: bigint('evaluated_tick', { mode: 'bigint' }).notNull(),
+  decision: text().notNull(),
+  reasonCode: text('reason_code').notNull(),
+  policyDslVersion: integer('policy_dsl_version').default(1).notNull(),
+  inputContext: jsonb('input_context').notNull(),
+  inputChecksum: bytea('input_checksum').notNull(),
+  decisionChecksum: bytea('decision_checksum').notNull(),
+  createdAt: timestamptz('created_at').defaultNow().notNull(),
+});
+
+export const governanceAuthorityDecisionSources = pgTable('governance_authority_decision_sources', {
+  id: uuid().primaryKey().notNull(),
+  worldId: uuid('world_id').notNull(),
+  decisionId: uuid('decision_id').notNull(),
+  sourceOrdinal: integer('source_ordinal').notNull(),
+  sourceKind: text('source_kind').notNull(),
+  sourceId: uuid('source_id').notNull(),
+  sourceVersion: bigint('source_version', { mode: 'bigint' }).notNull(),
+  sourceEffectiveTicks: int8range('source_effective_ticks'),
+  sourceChecksum: bytea('source_checksum').notNull(),
+  contribution: text().notNull(),
+  createdAt: timestamptz('created_at').defaultNow().notNull(),
+});
+
+export const governanceScheduleOccurrences = pgTable('governance_schedule_occurrences', {
+  id: uuid().primaryKey().notNull(),
+  worldId: uuid('world_id').notNull(),
+  scheduledActionId: uuid('scheduled_action_id').notNull(),
+  occurrenceKey: text('occurrence_key').notNull(),
+  targetKind: text('target_kind').notNull(),
+  targetId: uuid('target_id').notNull(),
+  transitionKind: text('transition_kind').notNull(),
+  dueTick: bigint('due_tick', { mode: 'bigint' }).notNull(),
+  commandId: uuid('command_id').notNull(),
+  eventId: uuid('event_id').notNull(),
+  stateRevision: bigint('state_revision', { mode: 'bigint' }).notNull(),
+  createdAt: timestamptz('created_at').defaultNow().notNull(),
+});
+
+export const governanceOverrides = pgTable('governance_overrides', {
+  id: uuid().primaryKey().notNull(),
+  worldId: uuid('world_id').notNull(),
+  creatorOverrideId: uuid('creator_override_id').notNull(),
+  actorUserId: uuid('actor_user_id').notNull(),
+  actorMode: text('actor_mode').notNull(),
+  targetKind: text('target_kind').notNull(),
+  targetId: uuid('target_id').notNull(),
+  reason: text().notNull(),
+  impactBefore: jsonb('impact_before').notNull(),
+  impactAfter: jsonb('impact_after').notNull(),
+  requiresSecondApproval: boolean('requires_second_approval').default(false).notNull(),
+  commandId: uuid('command_id').notNull(),
+  eventId: uuid('event_id').notNull(),
+  ledgerEntryId: uuid('ledger_entry_id').notNull(),
+  stateRevision: bigint('state_revision', { mode: 'bigint' }).notNull(),
+  checksum: bytea('checksum').notNull(),
+  createdAt: timestamptz('created_at').defaultNow().notNull(),
+});
+
+export const governanceOverrideApprovals = pgTable('governance_override_approvals', {
+  id: uuid().primaryKey().notNull(),
+  worldId: uuid('world_id').notNull(),
+  overrideId: uuid('override_id').notNull(),
+  approverUserId: uuid('approver_user_id').notNull(),
+  approvalKind: text('approval_kind').notNull(),
+  approvalHash: bytea('approval_hash').notNull(),
+  auditRecordId: uuid('audit_record_id').notNull(),
+  approvedAt: timestamptz('approved_at').defaultNow().notNull(),
+});
+
+export const governanceRepairs = pgTable('governance_repairs', {
+  id: uuid().primaryKey().notNull(),
+  worldId: uuid('world_id').notNull(),
+  targetKind: text('target_kind').notNull(),
+  targetId: uuid('target_id').notNull(),
+  repairKind: text('repair_kind').notNull(),
+  reason: text().notNull(),
+  beforeChecksum: bytea('before_checksum').notNull(),
+  afterChecksum: bytea('after_checksum').notNull(),
+  replacementResultId: uuid('replacement_result_id'),
+  requiresSecondApproval: boolean('requires_second_approval').default(true).notNull(),
+  commandId: uuid('command_id').notNull(),
+  eventId: uuid('event_id').notNull(),
+  ledgerEntryId: uuid('ledger_entry_id').notNull(),
+  actorUserId: uuid('actor_user_id').notNull(),
+  stateRevision: bigint('state_revision', { mode: 'bigint' }).notNull(),
+  createdAt: timestamptz('created_at').defaultNow().notNull(),
+});
+
+export const governanceRepairApprovals = pgTable('governance_repair_approvals', {
+  id: uuid().primaryKey().notNull(),
+  worldId: uuid('world_id').notNull(),
+  repairId: uuid('repair_id').notNull(),
+  approverUserId: uuid('approver_user_id').notNull(),
+  approvalHash: bytea('approval_hash').notNull(),
+  auditRecordId: uuid('audit_record_id').notNull(),
+  approvedAt: timestamptz('approved_at').defaultNow().notNull(),
+});
+
+export const recentCredentialProofs = pgTable(
+  'recent_credential_proofs',
+  {
+    id: uuid().primaryKey().notNull(),
+    proofHash: bytea('proof_hash').notNull(),
+    sessionId: uuid('session_id')
+      .notNull()
+      .references(() => sessions.id, { onDelete: 'restrict' }),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'restrict' }),
+    worldId: uuid('world_id')
+      .notNull()
+      .references(() => worlds.id, { onDelete: 'restrict' }),
+    commandId: uuid('command_id').notNull(),
+    commandType: text('command_type').notNull(),
+    commandRequestHash: bytea('command_request_hash').notNull(),
+    method: text().notNull(),
+    verifiedAt: timestamptz('verified_at').notNull(),
+    expiresAt: timestamptz('expires_at').notNull(),
+    requestId: text('request_id').notNull(),
+    auditRecordId: uuid('audit_record_id').notNull(),
+    createdAt: timestamptz('created_at').defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex('recent_credential_proofs_hash_unique').on(table.proofHash),
+    uniqueIndex('recent_credential_proofs_audit_unique').on(table.auditRecordId),
+    unique('recent_credential_proofs_binding_unique').on(
+      table.id,
+      table.sessionId,
+      table.userId,
+      table.worldId,
+      table.commandId,
+      table.commandType,
+      table.commandRequestHash,
+    ),
+    foreignKey({
+      columns: [table.auditRecordId, table.worldId, table.userId],
+      foreignColumns: [
+        securityAuditRecords.id,
+        securityAuditRecords.worldId,
+        securityAuditRecords.actorUserId,
+      ],
+      name: 'recent_credential_proofs_audit_world_actor_fk',
+    }).onDelete('restrict'),
+    index('recent_credential_proofs_expiry_idx').on(table.expiresAt, table.id),
+    check(
+      'recent_credential_proofs_shape_valid',
+      sql`octet_length(${table.proofHash}) = 32
+        and octet_length(${table.commandRequestHash}) = 32
+        and ${table.commandType} in ('ExecuteCreatorOverrideV1','RepairGovernanceResultV1')
+        and ${table.method} = 'password'
+        and ${table.expiresAt} > ${table.verifiedAt}
+        and ${table.expiresAt} <= ${table.verifiedAt} + interval '15 minutes'
+        and ${table.createdAt} >= ${table.verifiedAt}
+        and char_length(${table.requestId}) between 1 and 128
+        and ${table.requestId} !~ '[[:cntrl:]]'`,
+    ),
+  ],
+);
+
+export const recentCredentialProofConsumptions = pgTable(
+  'recent_credential_proof_consumptions',
+  {
+    proofId: uuid('proof_id').primaryKey().notNull(),
+    sessionId: uuid('session_id').notNull(),
+    userId: uuid('user_id').notNull(),
+    worldId: uuid('world_id').notNull(),
+    commandId: uuid('command_id').notNull(),
+    commandType: text('command_type').notNull(),
+    commandRequestHash: bytea('command_request_hash').notNull(),
+    requestId: text('request_id').notNull(),
+    consumedAt: timestamptz('consumed_at').defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex('recent_credential_proof_consumptions_command_unique').on(table.commandId),
+    foreignKey({
+      columns: [
+        table.proofId,
+        table.sessionId,
+        table.userId,
+        table.worldId,
+        table.commandId,
+        table.commandType,
+        table.commandRequestHash,
+      ],
+      foreignColumns: [
+        recentCredentialProofs.id,
+        recentCredentialProofs.sessionId,
+        recentCredentialProofs.userId,
+        recentCredentialProofs.worldId,
+        recentCredentialProofs.commandId,
+        recentCredentialProofs.commandType,
+        recentCredentialProofs.commandRequestHash,
+      ],
+      name: 'recent_credential_proof_consumptions_binding_fk',
+    }).onDelete('restrict'),
+    foreignKey({
+      columns: [table.commandId, table.worldId],
+      foreignColumns: [commandRecords.id, commandRecords.worldId],
+      name: 'recent_credential_proof_consumptions_command_world_fk',
+    }).onDelete('restrict'),
+    check(
+      'recent_credential_proof_consumptions_shape_valid',
+      sql`octet_length(${table.commandRequestHash}) = 32
+        and ${table.commandType} in ('ExecuteCreatorOverrideV1','RepairGovernanceResultV1')
+        and char_length(${table.requestId}) between 1 and 128
+        and ${table.requestId} !~ '[[:cntrl:]]'`,
+    ),
+  ],
+);
+
+export const publicProjectAuthorizations = pgTable('public_project_authorizations', {
+  id: uuid().primaryKey().notNull(),
+  worldId: uuid('world_id').notNull(),
+  proposalActionId: uuid('proposal_action_id').notNull(),
+  proposalResultId: uuid('proposal_result_id').notNull(),
+  projectEntityId: uuid('project_entity_id').notNull(),
+  treasuryWalletId: uuid('treasury_wallet_id').notNull(),
+  currencyId: uuid('currency_id').notNull(),
+  authorizedMinor: bigint('authorized_minor', { mode: 'bigint' }).notNull(),
+  startsTick: bigint('starts_tick', { mode: 'bigint' }).notNull(),
+  expiresTick: bigint('expires_tick', { mode: 'bigint' }),
+  purposeCode: text('purpose_code').notNull(),
+  terms: jsonb().notNull(),
+  checksum: bytea('checksum').notNull(),
+  commandId: uuid('command_id').notNull(),
+  eventId: uuid('event_id').notNull(),
+  stateRevision: bigint('state_revision', { mode: 'bigint' }).notNull(),
+  createdAt: timestamptz('created_at').defaultNow().notNull(),
+});
+
+export const treasuryEncumbrances = pgTable('treasury_encumbrances', {
+  id: uuid().primaryKey().notNull(),
+  worldId: uuid('world_id').notNull(),
+  projectAuthorizationId: uuid('project_authorization_id').notNull(),
+  treasuryWalletId: uuid('treasury_wallet_id').notNull(),
+  currencyId: uuid('currency_id').notNull(),
+  maximumMinor: bigint('maximum_minor', { mode: 'bigint' }).notNull(),
+  createdCommandId: uuid('created_command_id').notNull(),
+  createdEventId: uuid('created_event_id').notNull(),
+  createdStateRevision: bigint('created_state_revision', { mode: 'bigint' }).notNull(),
+  createdAt: timestamptz('created_at').defaultNow().notNull(),
+});
+
+export const treasuryEncumbranceFacts = pgTable('treasury_encumbrance_facts', {
+  id: uuid().primaryKey().notNull(),
+  worldId: uuid('world_id').notNull(),
+  encumbranceId: uuid('encumbrance_id').notNull(),
+  factSequence: integer('fact_sequence').notNull(),
+  factKind: text('fact_kind').notNull(),
+  amountMinor: bigint('amount_minor', { mode: 'bigint' }).notNull(),
+  commandId: uuid('command_id').notNull(),
+  eventId: uuid('event_id').notNull(),
+  stateRevision: bigint('state_revision', { mode: 'bigint' }).notNull(),
+  occurredTick: bigint('occurred_tick', { mode: 'bigint' }).notNull(),
+  checksum: bytea('checksum').notNull(),
+  createdAt: timestamptz('created_at').defaultNow().notNull(),
+});
+
+export const treasuryEncumbranceProjections = pgTable('treasury_encumbrance_projections', {
+  encumbranceId: uuid('encumbrance_id').primaryKey().notNull(),
+  worldId: uuid('world_id').notNull(),
+  treasuryWalletId: uuid('treasury_wallet_id').notNull(),
+  currencyId: uuid('currency_id').notNull(),
+  authorizedMinor: bigint('authorized_minor', { mode: 'bigint' }).notNull(),
+  consumedMinor: bigint('consumed_minor', { mode: 'bigint' }).default(0n).notNull(),
+  releasedMinor: bigint('released_minor', { mode: 'bigint' }).default(0n).notNull(),
+  activeMinor: bigint('active_minor', { mode: 'bigint' }).notNull(),
+  status: text().default('active').notNull(),
+  lastFactSequence: integer('last_fact_sequence').notNull(),
+  rowVersion: bigint('row_version', { mode: 'bigint' }).default(1n).notNull(),
+  updatedStateRevision: bigint('updated_state_revision', { mode: 'bigint' }).notNull(),
+  updatedAt: timestamptz('updated_at').defaultNow().notNull(),
+});
+
+export const taxPolicyAuthorityIntervals = pgTable('tax_policy_authority_intervals', {
+  id: uuid().primaryKey().notNull(),
+  worldId: uuid('world_id').notNull(),
+  taxPolicyId: uuid('tax_policy_id').notNull(),
+  currencyId: uuid('currency_id').notNull(),
+  taxType: taxPolicyType('tax_type').notNull(),
+  semanticScopeKey: text('semantic_scope_key').notNull(),
+  effectiveTicks: int8range('effective_ticks').notNull(),
+  createdCommandId: uuid('created_command_id').notNull(),
+  updatedCommandId: uuid('updated_command_id').notNull(),
+  rowVersion: bigint('row_version', { mode: 'bigint' }).default(1n).notNull(),
+  createdAt: timestamptz('created_at').defaultNow().notNull(),
+  updatedAt: timestamptz('updated_at').defaultNow().notNull(),
+});
+
+export const governanceTaxPolicyLineage = pgTable('governance_tax_policy_lineage', {
+  id: uuid().primaryKey().notNull(),
+  worldId: uuid('world_id').notNull(),
+  previousTaxPolicyId: uuid('previous_tax_policy_id').notNull(),
+  newTaxPolicyId: uuid('new_tax_policy_id').notNull(),
+  policyStableKey: citext('policy_stable_key').notNull(),
+  previousPolicyVersion: integer('previous_policy_version').notNull(),
+  newPolicyVersion: integer('new_policy_version').notNull(),
+  previousPolicyChecksum: bytea('previous_policy_checksum').notNull(),
+  newPolicyChecksum: bytea('new_policy_checksum').notNull(),
+  proposalResultId: uuid('proposal_result_id').notNull(),
+  proposalResultChecksum: bytea('proposal_result_checksum').notNull(),
+  proposalActionId: uuid('proposal_action_id').notNull(),
+  proposalActionChecksum: bytea('proposal_action_checksum').notNull(),
+  proposalEnactmentId: uuid('proposal_enactment_id').notNull(),
+  effectiveTick: bigint('effective_tick', { mode: 'bigint' }).notNull(),
+  commandId: uuid('command_id').notNull(),
+  eventId: uuid('event_id').notNull(),
+  stateRevision: bigint('state_revision', { mode: 'bigint' }).notNull(),
+  checksum: bytea('checksum').notNull(),
+  createdAt: timestamptz('created_at').defaultNow().notNull(),
 });

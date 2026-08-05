@@ -4,6 +4,7 @@ import type { ScheduledActionV1 } from '@worldgraph/contracts';
 import { telemetry } from '@worldgraph/observability';
 
 import type { AuthenticatedActor } from '../identity/service.js';
+import type { GovernanceCommandGateway } from '../governance/command-gateway.js';
 import type { SubmitWorldCommand, WorldCommandResultTransport } from './api-contracts.js';
 import { WorldCommandBus } from './command-bus.js';
 import type {
@@ -1133,3 +1134,124 @@ describe('world command bus', () => {
     }
   });
 });
+
+describe('world command bus governance handoff', () => {
+  it('hands a valid public command directly to the pool-owned executor without pre-inserting', async () => {
+    const harness = transaction();
+    const commandRepository = repository(harness.tx);
+    const serializable = vi.spyOn(commandRepository, 'serializable');
+    const gateway = governanceGateway();
+    const commandBus = new WorldCommandBus(
+      commandRepository,
+      { next: () => eventId },
+      undefined,
+      undefined,
+      undefined,
+      gateway.value,
+    );
+
+    const outcome = await commandBus.submit(
+      creator,
+      worldId,
+      governanceInitializationRequest(),
+      commandId,
+      now,
+    );
+
+    expect(outcome).toMatchObject({ httpStatus: 200, result: { status: 'accepted' } });
+    expect(serializable).not.toHaveBeenCalled();
+    expect(harness.insertReceived).not.toHaveBeenCalled();
+    expect(gateway.prepareAuthority).toHaveBeenCalledWith(
+      expect.objectContaining({
+        actionCode: 'governance.initialize',
+        actorMode: 'creator',
+        resourceType: 'world_governance',
+        worldId,
+      }),
+    );
+    const publicExecution = gateway.executePublic.mock.calls[0]?.[0];
+    expect(publicExecution).toMatchObject({
+      actor: { actorEntityId: null, actorId, actorType: 'user' },
+      worldId,
+    });
+    expect(publicExecution?.command).toMatchObject({
+      actorMode: 'creator',
+      expectedTick: '0',
+      type: 'InitializeWorldGovernanceV1',
+    });
+    expect(gateway.executePublic.mock.calls[0]?.[0]).not.toHaveProperty('scheduler');
+  });
+
+  it('durably rejects missing governance tick through the legacy envelope transaction', async () => {
+    const harness = transaction();
+    const gateway = governanceGateway();
+    const commandBus = new WorldCommandBus(
+      repository(harness.tx),
+      { next: () => eventId },
+      undefined,
+      undefined,
+      undefined,
+      gateway.value,
+    );
+    const invalid = governanceInitializationRequest();
+    delete invalid.expectedTick;
+
+    const outcome = await commandBus.submit(creator, worldId, invalid, commandId, now);
+
+    expect(outcome).toMatchObject({
+      httpStatus: 422,
+      result: { rejectionCode: 'VALIDATION_FAILED', status: 'rejected' },
+    });
+    expect(harness.insertReceived).toHaveBeenCalledOnce();
+    expect(harness.reject).toHaveBeenCalledWith(
+      expect.objectContaining({ code: 'VALIDATION_FAILED' }),
+    );
+    expect(gateway.executePublic).not.toHaveBeenCalled();
+  });
+});
+
+function governanceInitializationRequest(): SubmitWorldCommand {
+  return request({
+    expectedAggregateVersion: '0',
+    expectedTick: '0',
+    idempotencyKey: 'governance-initialize-one',
+    payload: {
+      compiledWorldVersionId: '018f8652-3cb6-7d52-904b-cce7901d7e25',
+      seedPlanHash: 'a'.repeat(64),
+    },
+    type: 'InitializeWorldGovernanceV1',
+  });
+}
+
+function governanceGateway() {
+  const prepareAuthority = vi.fn<GovernanceCommandGateway['prepareAuthority']>(async () => ({
+    actor: { actorEntityId: null, actorId, actorType: 'user' },
+    authorization: {
+      actionCode: 'governance.initialize',
+      allowed: true,
+      context: { actorMode: 'creator', tick: '0' },
+      reasonCode: 'ALLOWED',
+      resourceId: worldId,
+      resourceType: 'world_governance',
+      ruleId: 'governance.creator_initialize',
+    },
+    hiddenByAuthority: false,
+  }));
+  const executePublic = vi.fn<GovernanceCommandGateway['executePublic']>(async (input) => ({
+    replayed: false,
+    result: {
+      commandId: input.command.commandId,
+      eventIds: [eventId],
+      eventSequenceRange: { from: '2', to: '2' },
+      ledgerSequenceRange: { from: '2', to: '3' },
+      resultingStateRevision: '1',
+      schemaVersion: 1,
+      status: 'accepted',
+    },
+  }));
+  return {
+    executePublic,
+    prepareAuthority,
+    value: { executePublic, prepareAuthority } satisfies GovernanceCommandGateway,
+  };
+}

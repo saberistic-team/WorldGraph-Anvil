@@ -379,7 +379,10 @@ export class PostgresCommerceScheduledCommand implements CommerceScheduledComman
       } catch (error) {
         await client.query('rollback').catch(() => undefined);
         releaseError ??= fatalConnectionError(error);
-        if (serializationFailure(error) && attempt + 1 < this.maximumSerializationAttempts) {
+        if (
+          (serializationFailure(error) || receivedCommandRace(error)) &&
+          attempt + 1 < this.maximumSerializationAttempts
+        ) {
           await this.retryDelay(attempt);
           continue;
         }
@@ -1894,10 +1897,8 @@ async function taxPolicyByIdAt(
             collection_mode::text,rounding_mode,rate_basis_points,
             fixed_amount_minor::text,applicability,effective_from_tick::text,
             effective_until_tick::text,status::text
-       from tax_policies
-      where world_id=$1 and id=$2 and tax_type=$3
-        and effective_from_tick <= $4::bigint
-        and (effective_until_tick is null or effective_until_tick > $4::bigint)`,
+       from worldgraph_tax_policy_effective_at_v2($1,$3::tax_policy_type,$4::bigint)
+      where id=$2`,
     [worldId, policyId, taxType, tick],
   );
   return (result.rows[0] as TaxPolicyRow | undefined) ?? null;
@@ -2658,6 +2659,21 @@ function serializationFailure(error: unknown): boolean {
     typeof error.code === 'string' &&
     (error.code === '40001' || error.code === '40P01')
   );
+}
+
+function receivedCommandRace(error: unknown): boolean {
+  if (!isObject(error) || error.code !== '23505' || typeof error.constraint !== 'string') {
+    return false;
+  }
+  // A waiter can acquire the per-world advisory lock with a SERIALIZABLE
+  // snapshot taken before the leader commits. Its replay read then misses the
+  // leader, while this receipt insert observes the committed unique key. A
+  // fresh transaction can safely re-read and validate the exact request hash.
+  return [
+    'command_records_pkey',
+    'command_records_world_identity',
+    'command_records_idempotency_unique',
+  ].includes(error.constraint);
 }
 
 function fatalConnectionError(error: unknown): Error | undefined {

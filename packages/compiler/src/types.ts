@@ -1,6 +1,6 @@
 import type {
   ActiveMemberPrincipalV1,
-  CompiledArtifactV3,
+  CompiledArtifactV4,
   CompilerDiagnosticV1,
   CompilerInputBundleV1,
   ExactPrimitiveInputV1,
@@ -50,7 +50,7 @@ export interface LoweredWorld {
 }
 
 export interface CompileWorldResult {
-  artifact: CompiledArtifactV3 | null;
+  artifact: CompiledArtifactV4 | null;
   diagnostics: CompilerDiagnosticV1[];
   inputHash: string;
   successfulStage: 'none' | 'resolve' | 'validate' | 'normalize' | 'lower' | 'link' | 'emit';

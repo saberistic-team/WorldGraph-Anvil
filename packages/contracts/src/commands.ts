@@ -1,6 +1,10 @@
 import { Type, type Static } from '@sinclair/typebox';
 
-import { COMPILER_VERSION, PREVIOUS_COMPILER_VERSION } from './versions.js';
+import {
+  COMPILER_VERSION,
+  PREVIOUS_COMPILER_VERSION,
+  RETAINED_COMPILER_VERSION,
+} from './versions.js';
 
 export const COMMAND_SCHEMA_VERSION = 1 as const;
 
@@ -239,7 +243,11 @@ export const ApplicationNotificationSchema = Type.Union([
       {
         actorUserId: NotificationId,
         compilerVersion: Type.Optional(
-          Type.Union([Type.Literal(PREVIOUS_COMPILER_VERSION), Type.Literal(COMPILER_VERSION)]),
+          Type.Union([
+            Type.Literal(RETAINED_COMPILER_VERSION),
+            Type.Literal(PREVIOUS_COMPILER_VERSION),
+            Type.Literal(COMPILER_VERSION),
+          ]),
         ),
         inputHash: NotificationHash,
         manifestRevisionId: NotificationId,

@@ -5111,7 +5111,7 @@ BEGIN
       AND trade.seller_inventory_id = listing.seller_inventory_id
       AND trade.unit_price_minor = listing.unit_price_minor
       AND trade.currency_id = listing.currency_id
-      AND transaction.transaction_kind = 'market_purchase'::financial_transaction_kind
+      AND transaction.transaction_kind::text = 'market_purchase'
       AND transaction.command_id = trade.command_id
       AND transaction.supply_delta_minor = 0
   ) THEN
@@ -5140,10 +5140,10 @@ BEGIN
         COALESCE(policy.fixed_amount_minor,0), policy.tax_type
       )
       AND transaction.command_id = assessment.command_id
-      AND transaction.transaction_kind = CASE assessment.source_type
-        WHEN 'market_trade' THEN 'market_purchase'::financial_transaction_kind
-        WHEN 'payroll' THEN 'payroll'::financial_transaction_kind
-        WHEN 'periodic_tax' THEN 'periodic_tax'::financial_transaction_kind
+      AND transaction.transaction_kind::text = CASE assessment.source_type
+        WHEN 'market_trade' THEN 'market_purchase'
+        WHEN 'payroll' THEN 'payroll'
+        WHEN 'periodic_tax' THEN 'periodic_tax'
       END
       AND (
         (assessment.source_type = 'market_trade' AND EXISTS (
@@ -6547,7 +6547,7 @@ BEGIN
       transaction_record.transaction_kind = 'asset_purchase'::financial_transaction_kind
       AND transaction_record.supply_delta_minor = 0 AND posting_count = 2))
     OR (command_type = 'PurchaseMarketListingV1' AND NOT (
-      transaction_record.transaction_kind = 'market_purchase'::financial_transaction_kind
+      transaction_record.transaction_kind::text = 'market_purchase'
       AND transaction_record.supply_delta_minor = 0
       AND posting_count BETWEEN 2 AND 4
       AND EXISTS (
@@ -6559,7 +6559,7 @@ BEGIN
           AND trade.currency_id = transaction_record.currency_id
       )))
     OR (command_type = 'SettlePayrollV1' AND NOT (
-      transaction_record.transaction_kind = 'payroll'::financial_transaction_kind
+      transaction_record.transaction_kind::text = 'payroll'
       AND transaction_record.supply_delta_minor = 0
       AND posting_count BETWEEN 2 AND 3
       AND EXISTS (
@@ -6572,7 +6572,7 @@ BEGIN
           AND payroll.status = 'paid'::payroll_status
       )))
     OR (command_type = 'AssessPeriodicTaxV1' AND NOT (
-      transaction_record.transaction_kind = 'periodic_tax'::financial_transaction_kind
+      transaction_record.transaction_kind::text = 'periodic_tax'
       AND transaction_record.supply_delta_minor = 0
       AND posting_count = 2
       AND EXISTS (

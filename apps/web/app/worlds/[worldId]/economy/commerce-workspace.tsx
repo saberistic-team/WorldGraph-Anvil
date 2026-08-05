@@ -907,13 +907,14 @@ function BusinessPanel({
                     <label className="checkbox-row" key={recipe.id}>
                       <input
                         checked={facilityRecipeIds.includes(recipe.id)}
-                        onChange={(event) =>
+                        onChange={(event) => {
+                          const checked = event.currentTarget.checked;
                           setFacilityRecipeIds((current) =>
-                            event.currentTarget.checked
+                            checked
                               ? [...current, recipe.id]
                               : current.filter((id) => id !== recipe.id),
-                          )
-                        }
+                          );
+                        }}
                         type="checkbox"
                       />
                       Recipe version {recipe.version} · {recipe.durationTicks} ticks · requires{' '}

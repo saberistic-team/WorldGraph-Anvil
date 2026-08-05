@@ -1059,22 +1059,28 @@ export class PostgresCommerceReadRepository {
            on resource.world_id = listing.world_id and resource.id = listing.resource_type_id
          join world_simulation_clocks clock on clock.world_id = listing.world_id
          left join lateral (
-           select tax.* from tax_policies tax
-            where tax.world_id = listing.world_id and tax.currency_id = listing.currency_id
-              and tax.status = 'active' and tax.tax_type in ('sales','transaction')
-              and tax.effective_from_tick <= clock.current_tick
-              and (tax.effective_until_tick is null or tax.effective_until_tick > clock.current_tick)
+           select tax.* from (
+             select candidate.*,0 as tax_priority
+               from worldgraph_tax_policy_effective_at_v2(
+                 listing.world_id,'sales',clock.current_tick
+               ) candidate
+             union all
+             select candidate.*,1 as tax_priority
+               from worldgraph_tax_policy_effective_at_v2(
+                 listing.world_id,'transaction',clock.current_tick
+               ) candidate
+           ) tax
+            where tax.currency_id = listing.currency_id
+              and tax.status = 'active'
               and not (tax.id = any($3::uuid[]))
-            order by case tax.tax_type when 'sales' then 0 else 1 end,
-                     tax.policy_version desc, tax.id
+            order by tax.tax_priority, tax.policy_version desc, tax.id
             limit 1
          ) policy on true
          left join lateral (
-           select tax.* from tax_policies tax
-            where tax.world_id = listing.world_id and tax.currency_id = listing.currency_id
-              and tax.status = 'active' and tax.tax_type = 'marketplace_fee'
-              and tax.effective_from_tick <= clock.current_tick
-              and (tax.effective_until_tick is null or tax.effective_until_tick > clock.current_tick)
+           select tax.* from worldgraph_tax_policy_effective_at_v2(
+             listing.world_id,'marketplace_fee',clock.current_tick
+           ) tax
+            where tax.currency_id = listing.currency_id and tax.status = 'active'
               and not (tax.id = any($3::uuid[]))
             order by tax.policy_version desc, tax.id
             limit 1

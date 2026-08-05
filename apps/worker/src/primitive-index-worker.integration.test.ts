@@ -6,6 +6,8 @@ import {
   createPrimitiveEmbeddingProfile,
   disabledEmbeddingProvider,
   EmbeddingProviderError,
+  GOVERNANCE_PRIMITIVES,
+  HARBOR_CITY_ECONOMY_PRIMITIVES,
   STARTER_PRIMITIVES,
 } from '@worldgraph/catalog';
 import { applyMigrations, createDatabaseClient, importStarterPrimitives } from '@worldgraph/db';
@@ -16,6 +18,8 @@ import { PostgresPrimitiveIndexRepository } from './primitive-index-repository.j
 import { PrimitiveIndexRunner, type PrimitiveIndexMetrics } from './primitive-index-worker.js';
 
 const migrationRoot = resolve('packages/db/drizzle');
+const bundledPrimitiveCount =
+  STARTER_PRIMITIVES.length + HARBOR_CITY_ECONOMY_PRIMITIVES.length + GOVERNANCE_PRIMITIVES.length;
 const primary = STARTER_PRIMITIVES[0]!;
 const secondary = STARTER_PRIMITIVES[1]!;
 const logger = createLogger({
@@ -112,11 +116,11 @@ describe('PostgreSQL-authoritative primitive indexing', () => {
   it('discovers side-by-side profile jobs for every published version without resetting terminal work', async () => {
     const indexRepository = repository();
     await expect(indexRepository.ensureCurrentJobs('disabled-v1', 1, 250)).resolves.toEqual({
-      inserted: 16,
+      inserted: bundledPrimitiveCount,
       remaining: 0,
     });
     await expect(indexRepository.ensureCurrentJobs('local-hash-1536-v1', 1, 250)).resolves.toEqual({
-      inserted: 16,
+      inserted: bundledPrimitiveCount,
       remaining: 0,
     });
 
@@ -151,11 +155,16 @@ describe('PostgreSQL-authoritative primitive indexing', () => {
         order by provider_configuration_id`,
     );
     expect(state.rows).toEqual([
-      { completed: '0', disabled: '1', jobs: '16', provider_configuration_id: 'disabled-v1' },
+      {
+        completed: '0',
+        disabled: '1',
+        jobs: String(bundledPrimitiveCount),
+        provider_configuration_id: 'disabled-v1',
+      },
       {
         completed: '1',
         disabled: '0',
-        jobs: '16',
+        jobs: String(bundledPrimitiveCount),
         provider_configuration_id: 'local-hash-1536-v1',
       },
     ]);

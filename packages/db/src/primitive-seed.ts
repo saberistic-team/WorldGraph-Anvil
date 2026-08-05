@@ -4,12 +4,14 @@ import type { Pool, PoolClient, QueryResultRow } from 'pg';
 
 import {
   buildPrimitiveIndexDocument,
+  assertGovernanceCatalogLock,
   assertHarborCityCatalogLock,
   assertStarterCatalogLock,
   parseSemver,
   primitiveContentHash,
   resolveDependencies,
   STARTER_PRIMITIVES,
+  GOVERNANCE_PRIMITIVES,
   HARBOR_CITY_ECONOMY_PRIMITIVES,
   CATALOG_CURATOR_USER_ID,
   type PublishedPrimitiveRef,
@@ -58,19 +60,68 @@ interface ExistingVersionRow extends QueryResultRow {
 const BUNDLED_PRIMITIVES: StarterPrimitive[] = [
   ...STARTER_PRIMITIVES,
   ...HARBOR_CITY_ECONOMY_PRIMITIVES,
+  ...GOVERNANCE_PRIMITIVES,
 ];
 
-const publishedCatalog: PublishedPrimitiveRef[] = BUNDLED_PRIMITIVES.map((primitive) => ({
-  contentHash: primitive.contentHash,
-  dependencies: primitive.input.dependencies,
-  key: primitive.input.key,
-  version: primitive.input.version,
-  versionId: primitive.versionId,
-}));
+interface SeedAuditProvenance {
+  catalog: string;
+  review: {
+    id: string;
+    status: 'approved';
+  };
+  source: {
+    id: string;
+    type: string;
+    version: string;
+  };
+}
 
-function publicationOrder(): StarterPrimitive[] {
+function seedAuditProvenance(seed: StarterPrimitive): SeedAuditProvenance {
+  const provenance = seed.input.provenance;
+  const required = (
+    field: 'reviewId' | 'reviewStatus' | 'sourceId' | 'sourceType' | 'sourceVersion',
+  ) => {
+    const value = provenance[field];
+    if (typeof value !== 'string' || value.length === 0 || value.trim() !== value) {
+      throw new PrimitiveSeedError(
+        'SEED_CATALOG_INVALID',
+        `Bundled primitive ${seed.input.key}@${seed.input.version} has invalid provenance.${field}.`,
+      );
+    }
+    return value;
+  };
+  const reviewStatus = required('reviewStatus');
+  if (reviewStatus !== 'approved') {
+    throw new PrimitiveSeedError(
+      'SEED_CATALOG_INVALID',
+      `Bundled primitive ${seed.input.key}@${seed.input.version} is not approved.`,
+    );
+  }
+  const sourceId = required('sourceId');
+  return {
+    catalog: sourceId,
+    review: { id: required('reviewId'), status: reviewStatus },
+    source: {
+      id: sourceId,
+      type: required('sourceType'),
+      version: required('sourceVersion'),
+    },
+  };
+}
+
+function publishedCatalog(primitives: readonly StarterPrimitive[]): PublishedPrimitiveRef[] {
+  return primitives.map((primitive) => ({
+    contentHash: primitive.contentHash,
+    dependencies: primitive.input.dependencies,
+    key: primitive.input.key,
+    version: primitive.input.version,
+    versionId: primitive.versionId,
+  }));
+}
+
+function publicationOrder(primitives: readonly StarterPrimitive[]): StarterPrimitive[] {
   const remaining = new Map(
-    BUNDLED_PRIMITIVES.map((primitive) => [primitive.input.key, primitive]),
+    primitives.map((primitive) => [`${primitive.input.key}@${primitive.input.version}`, primitive]),
   );
   const ordered: StarterPrimitive[] = [];
   const available = new Set<string>();
@@ -88,7 +139,7 @@ function publicationOrder(): StarterPrimitive[] {
         'Bundled seed dependency graph contains a cycle.',
       );
     for (const primitive of ready) {
-      remaining.delete(primitive.input.key);
+      remaining.delete(`${primitive.input.key}@${primitive.input.version}`);
       available.add(primitive.input.key);
       ordered.push(primitive);
     }
@@ -144,6 +195,7 @@ async function assertExistingVersion(
   client: PoolClient,
   seed: StarterPrimitive,
   row: ExistingVersionRow,
+  catalog: readonly PublishedPrimitiveRef[],
 ): Promise<void> {
   if (row.id !== seed.versionId || row.family_id !== seed.familyId || row.lifecycle === 'draft') {
     throw new PrimitiveSeedError(
@@ -161,7 +213,7 @@ async function assertExistingVersion(
       `Published bundled content differs for ${seed.input.key}@${seed.input.version}.`,
     );
   }
-  const resolution = resolveDependencies(seed.input.key, seed.input.dependencies, publishedCatalog);
+  const resolution = resolveDependencies(seed.input.key, seed.input.dependencies, catalog);
   const expected = new Map(resolution.resolved.map((item) => [item.key, item]));
   const actual = await client.query<{
     key: string;
@@ -252,9 +304,22 @@ async function assertExistingVersion(
   }
 }
 
-export async function importStarterPrimitives(pool: Pool): Promise<PrimitiveSeedResult> {
+export interface PrimitiveSeedOptions {
+  includeHarborCityEconomy?: boolean;
+}
+
+export async function importStarterPrimitives(
+  pool: Pool,
+  options: PrimitiveSeedOptions = {},
+): Promise<PrimitiveSeedResult> {
+  const primitives =
+    options.includeHarborCityEconomy === false ? STARTER_PRIMITIVES : BUNDLED_PRIMITIVES;
+  const catalog = publishedCatalog(primitives);
   assertStarterCatalogLock();
-  assertHarborCityCatalogLock();
+  if (options.includeHarborCityEconomy !== false) {
+    assertHarborCityCatalogLock();
+    assertGovernanceCatalogLock();
+  }
   const client = await pool.connect();
   try {
     await client.query('begin');
@@ -262,12 +327,8 @@ export async function importStarterPrimitives(pool: Pool): Promise<PrimitiveSeed
       "select pg_advisory_xact_lock(hashtextextended('worldgraph.catalog.seed.v1', 0))",
     );
 
-    for (const seed of BUNDLED_PRIMITIVES) {
-      const resolution = resolveDependencies(
-        seed.input.key,
-        seed.input.dependencies,
-        publishedCatalog,
-      );
+    for (const seed of primitives) {
+      const resolution = resolveDependencies(seed.input.key, seed.input.dependencies, catalog);
       if (resolution.issues.length > 0)
         throw new PrimitiveSeedError('SEED_CATALOG_INVALID', JSON.stringify(resolution.issues));
       const family = await client.query<{
@@ -312,18 +373,18 @@ export async function importStarterPrimitives(pool: Pool): Promise<PrimitiveSeed
           `Bundled version has a dual identity collision for ${seed.input.key}@${seed.input.version}.`,
         );
       }
-      if (existing.rows[0]) await assertExistingVersion(client, seed, existing.rows[0]);
+      if (existing.rows[0]) await assertExistingVersion(client, seed, existing.rows[0], catalog);
     }
 
     const existingIds = new Set<string>();
     const existingResult = await client.query<{ id: string }>(
       'select id from primitive_versions where id = any($1::uuid[])',
-      [BUNDLED_PRIMITIVES.map((primitive) => primitive.versionId)],
+      [primitives.map((primitive) => primitive.versionId)],
     );
     existingResult.rows.forEach((row) => existingIds.add(row.id));
-    const planned = BUNDLED_PRIMITIVES.filter((primitive) => !existingIds.has(primitive.versionId));
+    const planned = primitives.filter((primitive) => !existingIds.has(primitive.versionId));
 
-    for (const seed of BUNDLED_PRIMITIVES) {
+    for (const seed of primitives) {
       await client.query(
         `insert into primitive_families
           (id, stable_key, kind, display_name, created_by_user_id)
@@ -377,15 +438,11 @@ export async function importStarterPrimitives(pool: Pool): Promise<PrimitiveSeed
     }
 
     for (const seed of planned) {
-      const resolution = resolveDependencies(
-        seed.input.key,
-        seed.input.dependencies,
-        publishedCatalog,
-      );
+      const resolution = resolveDependencies(seed.input.key, seed.input.dependencies, catalog);
       const direct = new Map(resolution.resolved.map((dependency) => [dependency.key, dependency]));
       for (const dependency of seed.input.dependencies) {
         const target = direct.get(dependency.key)!;
-        const targetSeed = BUNDLED_PRIMITIVES.find((entry) => entry.input.key === dependency.key)!;
+        const targetSeed = primitives.find((entry) => entry.input.key === dependency.key)!;
         await client.query(
           `insert into primitive_dependencies
             (primitive_version_id, dependency_family_id, version_range, required,
@@ -405,8 +462,9 @@ export async function importStarterPrimitives(pool: Pool): Promise<PrimitiveSeed
     }
 
     const plannedIds = new Set(planned.map((primitive) => primitive.versionId));
-    for (const seed of publicationOrder()) {
+    for (const seed of publicationOrder(primitives)) {
       if (!plannedIds.has(seed.versionId)) continue;
+      const auditProvenance = seedAuditProvenance(seed);
       const text = buildPrimitiveIndexDocument(seed.input);
       await client.query(
         `insert into primitive_search_documents
@@ -455,14 +513,14 @@ export async function importStarterPrimitives(pool: Pool): Promise<PrimitiveSeed
           seed.versionId,
           requestId,
           JSON.stringify({
-            catalog: 'worldgraph.city-state-starter',
+            ...auditProvenance,
             contentHash: seed.contentHash,
           }),
         ],
       );
     }
     await client.query('commit');
-    return { imported: planned.length, unchanged: BUNDLED_PRIMITIVES.length - planned.length };
+    return { imported: planned.length, unchanged: primitives.length - planned.length };
   } catch (error) {
     await client.query('rollback').catch(() => undefined);
     throw error;

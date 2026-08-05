@@ -10,12 +10,108 @@ import {
 import {
   createLogger,
   economyCommandTraceAttributes,
+  governanceCommandTraceAttributes,
   initializeTelemetry,
   redactSensitive,
   telemetry,
 } from './index.js';
 
+const governanceProposalStates = [
+  'draft',
+  'sponsoring',
+  'debate',
+  'scheduled',
+  'open',
+  'closing',
+  'tallied',
+  'certified',
+  'enacted',
+  'rejected',
+  'withdrawn',
+  'passed_but_enactment_failed',
+] as const;
+const governanceElectionStates = [
+  'nominations_scheduled',
+  'nominations_open',
+  'voting_scheduled',
+  'open',
+  'closing',
+  'tallied',
+  'certified',
+  'cancelled',
+] as const;
+
+function governanceOperationalStates() {
+  return [
+    ...governanceProposalStates.map((state) => ({
+      eligibleCount: state === 'open' ? 40 : 0,
+      state,
+      targetCount: state === 'open' ? 2 : 0,
+      targetKind: 'proposal' as const,
+      turnoutCount: state === 'open' ? 31 : 0,
+    })),
+    ...governanceElectionStates.map((state) => ({
+      eligibleCount: state === 'certified' ? 25 : 0,
+      state,
+      targetCount: state === 'certified' ? 1 : 0,
+      targetKind: 'election' as const,
+      turnoutCount: state === 'certified' ? 22 : 0,
+    })),
+  ];
+}
+
 describe('telemetry redaction', () => {
+  it('rejects non-allowlisted governance metric dimensions before replacing state', () => {
+    const states = governanceOperationalStates().map((entry, index) =>
+      index === 0 ? { ...entry, state: 'world-private-identity' } : entry,
+    );
+    expect(() =>
+      telemetry.setGovernanceOperationalState({
+        maxProjectionLagRevisions: 1,
+        pendingOutboxCount: 1,
+        states,
+      }),
+    ).toThrow('GOVERNANCE_OPERATIONAL_TELEMETRY_INVALID');
+  });
+
+  it('correlates governance work without exposing voter identity or accepting a choice field', () => {
+    const attributes = governanceCommandTraceAttributes({
+      actorId: 'voter-private-identity',
+      commandId: 'command-id',
+      commandType: 'CastProposalBallotV1',
+      contestId: 'contest-private-id',
+      contestType: 'proposal',
+      correlationId: 'correlation-id',
+      eligibilitySnapshotId: 'snapshot-private-id',
+      eventIds: ['event-b', 'event-a'],
+      occurrenceKey: 'harbor-city:proposal:close',
+      receiptHash: 'a'.repeat(64),
+      tick: '42',
+      worldId: 'world-private-id',
+    });
+
+    expect(attributes).toMatchObject({
+      'world.governance.command_id': 'command-id',
+      'world.governance.command_type': 'CastProposalBallotV1',
+      'world.governance.contest_type': 'proposal',
+      'world.governance.correlation_id': 'correlation-id',
+      'world.governance.event_ids': ['event-a', 'event-b'],
+      'world.governance.occurrence_key': 'harbor-city:proposal:close',
+      'world.governance.receipt_hash': 'a'.repeat(64),
+      'world.governance.tick': '42',
+    });
+    const serialized = JSON.stringify(attributes);
+    for (const privateValue of [
+      'voter-private-identity',
+      'contest-private-id',
+      'snapshot-private-id',
+      'world-private-id',
+    ]) {
+      expect(serialized).not.toContain(privateValue);
+    }
+    expect(serialized).not.toMatch(/choice|selection|voter.*contest/iu);
+  });
+
   it('correlates economy traces without exposing actor, wallet, world, or idempotency identity', () => {
     const attributes = economyCommandTraceAttributes({
       actorId: 'actor-private-identity',
@@ -95,7 +191,9 @@ describe('telemetry redaction', () => {
     expect(
       redactSensitive({
         authorization: 'Bearer hidden',
+        ballotChoice: 'candidate:private',
         canonical_manifest: { private: 'world design' },
+        choice: 'yes',
         entity_state: { private: 'runtime state' },
         memo: 'private transfer note',
         nested: { cookie: 'hidden', requestId: 'safe' },
@@ -106,7 +204,9 @@ describe('telemetry redaction', () => {
       }),
     ).toEqual({
       authorization: '[REDACTED]',
+      ballotChoice: '[REDACTED]',
       canonical_manifest: '[REDACTED]',
+      choice: '[REDACTED]',
       entity_state: '[REDACTED]',
       memo: '[REDACTED]',
       nested: { cookie: '[REDACTED]', requestId: 'safe' },
@@ -114,6 +214,28 @@ describe('telemetry redaction', () => {
       price: '[REDACTED]',
       promptText: '[REDACTED]',
       walletId: '[REDACTED]',
+    });
+  });
+
+  it('redacts governance step-up credentials and passwords at every nesting level', () => {
+    expect(
+      redactSensitive({
+        headers: {
+          'x-recent-credential-proof': 'raw-one-use-proof',
+        },
+        request: {
+          password: 'correct horse battery staple',
+          worldId: 'safe-world-id',
+        },
+      }),
+    ).toEqual({
+      headers: {
+        'x-recent-credential-proof': '[REDACTED]',
+      },
+      request: {
+        password: '[REDACTED]',
+        worldId: 'safe-world-id',
+      },
     });
   });
 
@@ -188,6 +310,11 @@ describe('telemetry redaction', () => {
     telemetry.economyDueOffers.record(2, { outcome: 'discovered' });
     telemetry.economyExpiredOfferTickLag.record(1, { outcome: 'expired' });
     telemetry.economyAbuseSignals.add(1, { signal: 'self_trade_attempt' });
+    telemetry.setGovernanceOperationalState({
+      maxProjectionLagRevisions: 6,
+      pendingOutboxCount: 3,
+      states: governanceOperationalStates(),
+    });
     telemetry.setEconomyOperationalState({
       activeReservationCount: 5,
       assetCount: 3,
@@ -237,6 +364,15 @@ describe('telemetry redaction', () => {
     expect(names).toContain('worldgraph_economy_due_offers');
     expect(names).toContain('worldgraph_economy_expired_offer_tick_lag');
     expect(names).toContain('worldgraph_economy_abuse_signals_total');
+    for (const name of [
+      'worldgraph_governance_targets',
+      'worldgraph_governance_eligible',
+      'worldgraph_governance_turnout',
+      'worldgraph_governance_projection_lag_revisions',
+      'worldgraph_governance_outbox_pending',
+    ]) {
+      expect(names).toContain(name);
+    }
     expect(names).toContain('worldgraph_economy_object_count');
     expect(names).toContain('worldgraph_economy_last_repair_timestamp_seconds');
     expect(names).toContain('worldgraph_economy_open_expired_offers');
@@ -293,6 +429,60 @@ describe('telemetry redaction', () => {
       worldgraph_commerce_tax_settlements: 9,
       worldgraph_commerce_treasury_reconciliation_delta_minor: 6,
       worldgraph_commerce_treasury_reconciliation_mismatches: 1,
+    });
+    const governanceSnapshotMetrics = exporter
+      .getMetrics()
+      .flatMap((resource) => resource.scopeMetrics)
+      .flatMap((scope) => scope.metrics)
+      .filter((metric) =>
+        [
+          'worldgraph_governance_targets',
+          'worldgraph_governance_eligible',
+          'worldgraph_governance_turnout',
+          'worldgraph_governance_projection_lag_revisions',
+          'worldgraph_governance_outbox_pending',
+        ].includes(metric.descriptor.name),
+      );
+    expect(governanceSnapshotMetrics).toHaveLength(5);
+    for (const metric of governanceSnapshotMetrics) {
+      const points = (
+        metric as unknown as {
+          dataPoints: { attributes: Record<string, unknown>; value: number }[];
+        }
+      ).dataPoints;
+      if (
+        metric.descriptor.name === 'worldgraph_governance_projection_lag_revisions' ||
+        metric.descriptor.name === 'worldgraph_governance_outbox_pending'
+      ) {
+        expect(points).toHaveLength(1);
+        expect(points[0]?.attributes).toEqual({});
+      } else {
+        expect(points).toHaveLength(20);
+        for (const point of points) {
+          expect(Object.keys(point.attributes).sort()).toEqual(['state', 'target_kind']);
+        }
+      }
+    }
+    expect(
+      Object.fromEntries(
+        governanceSnapshotMetrics
+          .filter(
+            (metric) =>
+              metric.descriptor.name.endsWith('revisions') ||
+              metric.descriptor.name.endsWith('pending'),
+          )
+          .map((metric) => [
+            metric.descriptor.name,
+            (
+              metric as unknown as {
+                dataPoints: { value: number }[];
+              }
+            ).dataPoints[0]?.value,
+          ]),
+      ),
+    ).toEqual({
+      worldgraph_governance_outbox_pending: 3,
+      worldgraph_governance_projection_lag_revisions: 6,
     });
     await runtime.shutdown();
   });
@@ -389,5 +579,59 @@ describe('telemetry redaction', () => {
     expect(rules).toContain('alert: WorldGraphEconomyAbuseSignalBurst');
     expect(rules).toContain('alert: WorldGraphEconomyRepairExecuted');
     expect(rules).not.toContain('operation="repair"');
+  });
+
+  it('ships governance panels and alerts with explicit external metric provenance', async () => {
+    const [rules, dashboardBytes] = await Promise.all([
+      readFile(new URL('../../../deploy/alerts/governance-v1.rules.yml', import.meta.url), 'utf8'),
+      readFile(
+        new URL('../../../deploy/dashboards/governance-v1.grafana.json', import.meta.url),
+        'utf8',
+      ),
+    ]);
+    const dashboard = JSON.parse(dashboardBytes) as { uid?: string };
+    const deployed = `${rules}\n${dashboardBytes}`;
+    expect(dashboard.uid).toBe('worldgraph-governance-v1');
+    for (const alert of [
+      'WorldGraphGovernanceTallyChecksumMismatch',
+      'WorldGraphGovernanceSchedulerLag',
+      'WorldGraphGovernanceScheduledCommandFailures',
+      'WorldGraphGovernanceEnactmentFailure',
+      'WorldGraphGovernanceOverrideUsed',
+      'WorldGraphGovernanceRepairUsed',
+      'WorldGraphGovernanceContestStuck',
+      'WorldGraphGovernanceTermTransitionFailure',
+      'WorldGraphGovernanceUnexpectedSecretAccess',
+    ]) {
+      expect(rules).toContain(`alert: ${alert}`);
+    }
+    for (const metric of [
+      'worldgraph_governance_commands_total',
+      'worldgraph_governance_authority_denies_total',
+      'worldgraph_governance_ballot_rejections_total',
+      'worldgraph_governance_enactment_failures_total',
+      'worldgraph_governance_overrides_total',
+      'worldgraph_governance_repairs_total',
+      'worldgraph_governance_scheduler_lag_ticks_bucket',
+      'worldgraph_governance_tally_duration_ms_bucket',
+      'worldgraph_governance_tally_checksum_mismatches_total',
+      'worldgraph_governance_scheduled_commands_total',
+      'worldgraph_governance_scheduled_effects_pending_sum',
+      'worldgraph_governance_scheduler_sweeps_total',
+      'worldgraph_governance_targets',
+      'worldgraph_governance_eligible',
+      'worldgraph_governance_turnout',
+      'worldgraph_governance_projection_lag_revisions',
+      'worldgraph_governance_outbox_pending',
+      'worldgraph_outbox_backlog_sum',
+      'worldgraph_outbox_oldest_age_ms_sum',
+    ]) {
+      expect(deployed).toContain(metric);
+    }
+    expect(rules).toContain('metric_source: postgresql_reconciliation_exporter');
+    expect(rules).toContain('metric_source: database_audit_exporter');
+    expect(deployed).not.toMatch(
+      /\b(?:actor_id|choice|contest_id|policy_checksum|receipt_hash|result_id|schedule_id|voter_id|world_id)\s*=/u,
+    );
   });
 });

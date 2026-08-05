@@ -291,6 +291,7 @@ export function WorldSimulation({ worldId }: WorldSimulationProps) {
           </Link>
           <Link href={`/worlds/${worldId}/history`}>History</Link>
           <Link href={`/worlds/${worldId}/economy`}>Economy</Link>
+          <Link href={`/worlds/${worldId}/govern`}>Govern</Link>
           <Link href={`/worlds/${worldId}/assets`}>Assets</Link>
         </nav>
       </header>

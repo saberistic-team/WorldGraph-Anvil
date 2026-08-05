@@ -4,6 +4,8 @@ export * from './diff.js';
 export * from './economy-extension.js';
 export * from './fallback.js';
 export * from './generation.js';
+export * from './governance-extension.js';
+export * from './governed-harbor-fallback.js';
 export * from './harbor-fallback.js';
 export * from './validation.js';
 export * from './yaml.js';

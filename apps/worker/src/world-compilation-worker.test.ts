@@ -1,21 +1,30 @@
-import { HARBOR_CITY_ECONOMY_PRIMITIVES, STARTER_PRIMITIVES } from '@worldgraph/catalog';
+import {
+  GOVERNANCE_PRIMITIVES,
+  HARBOR_CITY_ECONOMY_PRIMITIVES,
+  STARTER_PRIMITIVES,
+} from '@worldgraph/catalog';
 import {
   createCompilerInputBundle,
   createPreviousCompilerInputBundle,
+  createRetainedCompilerInputBundle,
   memberPrincipalKey,
 } from '@worldgraph/compiler';
 import {
   COMPILER_CONFIG_SCHEMA_VERSION,
   COMPILER_VERSION,
   PREVIOUS_COMPILER_VERSION,
+  RETAINED_COMPILER_VERSION,
   type ApplicationNotification,
   type CompilerDiagnosticV1,
   type CompilerInputBundleV1,
   type PreviousCompilerInputBundleV1,
+  type RetainedCompilerInputBundleV1,
 } from '@worldgraph/contracts';
 import {
+  createDeterministicGovernedHarborCityFallback,
   createDeterministicFallback,
   createDeterministicHarborCityFallback,
+  governedHarborCityManifestCatalog,
   harborCityManifestCatalog,
 } from '@worldgraph/manifests';
 import { createLogger } from '@worldgraph/observability';
@@ -76,10 +85,12 @@ function recordingMetrics() {
 }
 
 function exactPrimitives(): CompilationSourcePrimitive[] {
-  const fallback = harborFallback();
-  const pinned = new Set(fallback.envelope.manifest.primitiveRefs.map((entry) => entry.key));
-  return [...STARTER_PRIMITIVES, ...HARBOR_CITY_ECONOMY_PRIMITIVES]
-    .filter((primitive) => pinned.has(primitive.input.key))
+  const fallback = currentFallback();
+  const pinned = new Set(
+    fallback.envelope.manifest.primitiveRefs.map((entry) => entry.primitiveVersionId),
+  );
+  return [...STARTER_PRIMITIVES, ...HARBOR_CITY_ECONOMY_PRIMITIVES, ...GOVERNANCE_PRIMITIVES]
+    .filter((primitive) => pinned.has(primitive.versionId))
     .map((primitive) => ({
       contentHash: primitive.contentHash,
       definition: primitive.input,
@@ -88,7 +99,16 @@ function exactPrimitives(): CompilationSourcePrimitive[] {
     }));
 }
 
-function harborFallback() {
+function currentFallback() {
+  return createDeterministicGovernedHarborCityFallback({
+    catalog: governedHarborCityManifestCatalog(),
+    prompt:
+      'A governed harbor city with guild workshops, public taxation, civic proposals, and elections.',
+    seed,
+  });
+}
+
+function previousFallback() {
   return createDeterministicHarborCityFallback({
     catalog: harborCityManifestCatalog(),
     prompt:
@@ -97,7 +117,7 @@ function harborFallback() {
   });
 }
 
-function previousFallback() {
+function retainedFallback() {
   return createDeterministicFallback({
     catalog: harborCityManifestCatalog(),
     prompt: 'A deterministic harbor city with guild workshops and public institutions.',
@@ -108,7 +128,7 @@ function previousFallback() {
 function source(
   primitives: CompilationSourcePrimitive[] = exactPrimitives(),
 ): WorldCompilationSource {
-  const fallback = harborFallback();
+  const fallback = currentFallback();
   return {
     manifest: fallback.envelope.manifest,
     manifestContentHash: fallback.contentHash,
@@ -119,13 +139,15 @@ function source(
 
 function previousSource(): WorldCompilationSource {
   const fallback = previousFallback();
-  const pinned = new Set(fallback.envelope.manifest.primitiveRefs.map((entry) => entry.key));
+  const pinned = new Set(
+    fallback.envelope.manifest.primitiveRefs.map((entry) => entry.primitiveVersionId),
+  );
   return {
     manifest: fallback.envelope.manifest,
     manifestContentHash: fallback.contentHash,
     members: [{ role: 'creator', userId: creatorId }],
     primitives: [...STARTER_PRIMITIVES, ...HARBOR_CITY_ECONOMY_PRIMITIVES]
-      .filter((primitive) => pinned.has(primitive.input.key))
+      .filter((primitive) => pinned.has(primitive.versionId))
       .map((primitive) => ({
         contentHash: primitive.contentHash,
         definition: primitive.input,
@@ -135,12 +157,28 @@ function previousSource(): WorldCompilationSource {
   };
 }
 
-function previousSourceWithEconomyV1(): WorldCompilationSource {
-  const value = previousSource();
+function retainedSource(): WorldCompilationSource {
+  const fallback = retainedFallback();
+  const pinned = new Set(
+    fallback.envelope.manifest.primitiveRefs.map((entry) => entry.primitiveVersionId),
+  );
+  const value: WorldCompilationSource = {
+    manifest: fallback.envelope.manifest,
+    manifestContentHash: fallback.contentHash,
+    members: [{ role: 'creator', userId: creatorId }],
+    primitives: [...STARTER_PRIMITIVES, ...HARBOR_CITY_ECONOMY_PRIMITIVES]
+      .filter((primitive) => pinned.has(primitive.versionId))
+      .map((primitive) => ({
+        contentHash: primitive.contentHash,
+        definition: primitive.input,
+        lifecycle: 'published',
+        primitiveVersionId: primitive.versionId,
+      })),
+  };
   value.manifest.extensions['worldgraph.economy'] = { schemaVersion: 1 };
   return {
     ...value,
-    manifestContentHash: previousBundleFor(value).manifestContentHash,
+    manifestContentHash: retainedBundleFor(value).manifestContentHash,
   };
 }
 
@@ -161,6 +199,21 @@ function bundleFor(value: WorldCompilationSource): CompilerInputBundleV1 {
 
 function previousBundleFor(value: WorldCompilationSource): PreviousCompilerInputBundleV1 {
   return createPreviousCompilerInputBundle({
+    activeMembers: [{ principalKey: memberPrincipalKey(worldId, creatorId), role: 'creator' }],
+    compilerConfig: {
+      adapterRegistryVersion: 1,
+      deprecatedPrimitivePolicy: 'reject',
+      maxEntities: 2_000,
+      maxRelationships: 8_000,
+    },
+    manifest: value.manifest,
+    primitives: value.primitives,
+    seed,
+  });
+}
+
+function retainedBundleFor(value: WorldCompilationSource): RetainedCompilerInputBundleV1 {
+  return createRetainedCompilerInputBundle({
     activeMembers: [{ principalKey: memberPrincipalKey(worldId, creatorId), role: 'creator' }],
     compilerConfig: {
       adapterRegistryVersion: 1,
@@ -201,6 +254,16 @@ function previousJobFor(value: WorldCompilationSource): ClaimedWorldCompilation 
   return {
     ...jobFor(value),
     compilerVersion: PREVIOUS_COMPILER_VERSION,
+    inputHash: bundle.inputHash,
+    manifestContentHash: bundle.manifestContentHash,
+  };
+}
+
+function retainedJobFor(value: WorldCompilationSource): ClaimedWorldCompilation {
+  const bundle = retainedBundleFor(value);
+  return {
+    ...jobFor(value),
+    compilerVersion: RETAINED_COMPILER_VERSION,
     inputHash: bundle.inputHash,
     manifestContentHash: bundle.manifestContentHash,
   };
@@ -331,6 +394,8 @@ describe('world compilation runner', () => {
 
     expect(repository.stages).toEqual(['compiling', 'seeding']);
     expect(repository.activation?.artifact.contentHash).toMatch(/^[a-f0-9]{64}$/u);
+    expect(repository.activation?.artifact.artifactSchemaVersion).toBe(4);
+    expect(repository.activation?.artifact.world.compilerVersion).toBe(COMPILER_VERSION);
     expect(repository.activation?.bundle.inputHash).toBe(repository.jobValue.inputHash);
     expect(repository.activation?.members).toEqual([
       { principalKey: memberPrincipalKey(worldId, creatorId), userId: creatorId },
@@ -347,8 +412,8 @@ describe('world compilation runner', () => {
     ]);
   });
 
-  it('executes a sealed compiler 1.1 run and activates its artifact-2 output', async () => {
-    const sourceValue = previousSourceWithEconomyV1();
+  it('executes sealed compiler 1.2 and activates its artifact-3 output', async () => {
+    const sourceValue = previousSource();
     const repository = new FakeCompilationRepository(sourceValue, previousJobFor(sourceValue));
 
     const result = await runner(repository).runOne();
@@ -359,8 +424,24 @@ describe('world compilation runner', () => {
 
     expect(repository.stages).toEqual(['compiling', 'seeding']);
     expect(repository.activation?.bundle.compilerVersion).toBe(PREVIOUS_COMPILER_VERSION);
-    expect(repository.activation?.artifact.artifactSchemaVersion).toBe(2);
+    expect(repository.activation?.artifact.artifactSchemaVersion).toBe(3);
     expect(repository.activation?.artifact.world.compilerVersion).toBe(PREVIOUS_COMPILER_VERSION);
+  });
+
+  it('executes a sealed compiler 1.1 run and activates its artifact-2 output', async () => {
+    const sourceValue = retainedSource();
+    const repository = new FakeCompilationRepository(sourceValue, retainedJobFor(sourceValue));
+
+    const result = await runner(repository).runOne();
+    expect(result, JSON.stringify(repository.failedDiagnostics)).toMatchObject({
+      outcome: 'succeeded',
+      worldVersionId,
+    });
+
+    expect(repository.stages).toEqual(['compiling', 'seeding']);
+    expect(repository.activation?.bundle.compilerVersion).toBe(RETAINED_COMPILER_VERSION);
+    expect(repository.activation?.artifact.artifactSchemaVersion).toBe(2);
+    expect(repository.activation?.artifact.world.compilerVersion).toBe(RETAINED_COMPILER_VERSION);
   });
 
   it('fails closed for an unsupported compiler version before loading or compiling source', async () => {
@@ -380,13 +461,16 @@ describe('world compilation runner', () => {
   });
 
   it.each([
-    ['compiler 1.1 with an economy-v2 manifest', source(), PREVIOUS_COMPILER_VERSION],
-    ['compiler 1.2 without an economy-v2 manifest', previousSource(), COMPILER_VERSION],
+    ['compiler 1.2 with a governance-v1 manifest', source(), PREVIOUS_COMPILER_VERSION],
+    ['compiler 1.3 with an economy-v2-only manifest', previousSource(), COMPILER_VERSION],
+    ['compiler 1.1 with an economy-v2 manifest', previousSource(), RETAINED_COMPILER_VERSION],
   ])('rejects the source lane mismatch: %s', async (_label, sourceValue, compilerVersion) => {
     const bundle =
-      compilerVersion === PREVIOUS_COMPILER_VERSION
-        ? previousBundleFor(sourceValue)
-        : bundleFor(sourceValue);
+      compilerVersion === RETAINED_COMPILER_VERSION
+        ? retainedBundleFor(sourceValue)
+        : compilerVersion === PREVIOUS_COMPILER_VERSION
+          ? previousBundleFor(sourceValue)
+          : bundleFor(sourceValue);
     const repository = new FakeCompilationRepository(sourceValue, {
       ...jobFor(sourceValue),
       compilerVersion,

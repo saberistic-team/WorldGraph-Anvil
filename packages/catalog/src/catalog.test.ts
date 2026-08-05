@@ -20,6 +20,7 @@ import {
   satisfiesVersionRange,
 } from './semver.js';
 import { assertHarborCityCatalogLock, HARBOR_CITY_ECONOMY_PRIMITIVES } from './harbor-seed.js';
+import { assertGovernanceCatalogLock, GOVERNANCE_PRIMITIVES } from './governance-seed.js';
 import { assertStarterCatalogLock, STARTER_PRIMITIVES } from './seed.js';
 import {
   buildPrimitiveIndexDocument,
@@ -110,6 +111,28 @@ describe('primitive catalog domain', () => {
       'worldgraph.building.modular-guild-hall',
       'worldgraph.simulation-rule.discrete-city-clock',
     ]);
+  });
+
+  it('publishes an immutable plurality election version without changing ranked choice 1.0', () => {
+    expect(() => assertGovernanceCatalogLock()).not.toThrow();
+    expect(GOVERNANCE_PRIMITIVES).toHaveLength(1);
+    expect(GOVERNANCE_PRIMITIVES[0]).toMatchObject({
+      contentHash: 'b30fb010b82c935206cb8128bdfd5a4e573e1cec01b2de708e2167f97bdb0bde',
+      familyId: STARTER_PRIMITIVES.find((entry) => entry.input.kind === 'election')?.familyId,
+      input: {
+        defaults: { method: 'plurality', votingTicks: 24 },
+        key: 'worldgraph.election.council-ballot',
+        kind: 'election',
+        version: '1.1.0',
+      },
+    });
+    const sealed = STARTER_PRIMITIVES.find((entry) => entry.input.kind === 'election')!;
+    expect(sealed.input).toMatchObject({
+      defaults: { method: 'ranked-choice', votingTicks: 24 },
+      key: 'worldgraph.election.council-ballot',
+      version: '1.0.0',
+    });
+    expect(GOVERNANCE_PRIMITIVES[0]!.contentHash).not.toBe(sealed.contentHash);
   });
 
   it('implements full strict SemVer precedence, ranges, and deterministic build ties', () => {

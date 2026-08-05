@@ -1,0 +1,7 @@
+{
+  "catalog": "worldgraph.governance-core@1.0.0",
+  "schemaVersion": 1,
+  "primitives": {
+    "worldgraph.election.council-ballot@1.1.0": "b30fb010b82c935206cb8128bdfd5a4e573e1cec01b2de708e2167f97bdb0bde"
+  }
+}

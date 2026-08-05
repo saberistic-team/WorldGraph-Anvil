@@ -1,6 +1,6 @@
 # Milestone 01 state — Foundation and deployable shell
 
-Status: complete on 2026-07-21. This is the canonical retained state for Milestone 01. Milestone 02 must read this record, the linked ADRs, and the actual repository before changing code or migrations.
+Status: **complete and sealed on 2026-07-21**. This is the canonical retained state for Milestone 01. Milestone 02 must read this record, the linked ADRs, and the actual repository before changing code or migrations.
 
 ## Inputs consumed
 

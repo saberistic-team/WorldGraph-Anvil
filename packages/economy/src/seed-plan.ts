@@ -122,14 +122,11 @@ function effectiveWindowsOverlap(
   right: EconomySeedTaxPolicyV1,
 ): boolean {
   const leftFrom = BigInt(left.effectiveFromTick);
-  const leftUntil =
-    left.effectiveUntilTick === null ? null : BigInt(left.effectiveUntilTick);
+  const leftUntil = left.effectiveUntilTick === null ? null : BigInt(left.effectiveUntilTick);
   const rightFrom = BigInt(right.effectiveFromTick);
-  const rightUntil =
-    right.effectiveUntilTick === null ? null : BigInt(right.effectiveUntilTick);
+  const rightUntil = right.effectiveUntilTick === null ? null : BigInt(right.effectiveUntilTick);
   return (
-    (leftUntil === null || rightFrom < leftUntil) &&
-    (rightUntil === null || leftFrom < rightUntil)
+    (leftUntil === null || rightFrom < leftUntil) && (rightUntil === null || leftFrom < rightUntil)
   );
 }
 
@@ -143,18 +140,13 @@ function effectiveWindowsOverlap(
 export function assertNonOverlappingEconomySeedTaxPolicies(
   policies: readonly EconomySeedTaxPolicyV1[],
 ): void {
-  const ordered = [...policies].sort((left, right) =>
-    compareText(left.stableKey, right.stableKey),
-  );
+  const ordered = [...policies].sort((left, right) => compareText(left.stableKey, right.stableKey));
   for (let leftIndex = 0; leftIndex < ordered.length; leftIndex += 1) {
     const left = ordered[leftIndex]!;
     const leftScope = economySeedTaxPolicyScope(left);
     for (let rightIndex = leftIndex + 1; rightIndex < ordered.length; rightIndex += 1) {
       const right = ordered[rightIndex]!;
-      if (
-        leftScope === economySeedTaxPolicyScope(right) &&
-        effectiveWindowsOverlap(left, right)
-      ) {
+      if (leftScope === economySeedTaxPolicyScope(right) && effectiveWindowsOverlap(left, right)) {
         throw new EconomyDomainError(
           ErrorCodes.seedPlanIncompatible,
           `Active tax policies ${left.stableKey} and ${right.stableKey} overlap for one identical semantic scope.`,

@@ -42,6 +42,7 @@ const cursorSecret = 'm09-authorization-rate-cursor-secret-32-chars';
 interface BrowserSession {
   cookie: string;
   csrf: string;
+  email: string;
   userId: string;
 }
 
@@ -232,11 +233,8 @@ describe.sequential('M09 commerce authorization and durable target rate limits',
     rateMember = await register('m09-authority-rate@example.test', 'Authority Rate Member');
 
     world = await createCompiledCommerceWorld();
-    await client.pool.query(
-      `insert into world_memberships(world_id,user_id,role,status,granted_by_user_id)
-       values ($1,$2,'administrator','active',$4),($1,$3,'player','active',$4)`,
-      [world.worldId, administrator.userId, rateMember.userId, creator.userId],
-    );
+    await inviteAndAcceptMember(administrator, 'administrator');
+    await inviteAndAcceptMember(rateMember, 'player');
     await initializeEconomy();
     await initializeCommerce();
     fixture = await loadBusinessFixture();
@@ -680,8 +678,50 @@ describe.sequential('M09 commerce authorization and durable target rate limits',
     return {
       cookie: pairs.join('; '),
       csrf: decodeURIComponent(csrf.slice('wg_csrf='.length)),
+      email,
       userId: response.json<{ user: { id: string } }>().user.id,
     };
+  }
+
+  async function inviteAndAcceptMember(
+    invitee: BrowserSession,
+    role: 'administrator' | 'player',
+  ): Promise<void> {
+    const invitationResponse = await app.inject({
+      headers: mutationHeaders(creator, `invite-${invitee.userId}`),
+      method: 'POST',
+      payload: { email: invitee.email, expiresIn: 3_600, role: 'player' },
+      url: `/api/v1/worlds/${world.worldId}/invitations`,
+    });
+    expect(invitationResponse.statusCode, invitationResponse.body).toBe(201);
+    const { rawToken } = invitationResponse.json<{ rawToken: string }>();
+    const acceptanceResponse = await app.inject({
+      headers: mutationHeaders(invitee, `accept-${invitee.userId}`),
+      method: 'POST',
+      payload: { rawToken },
+      url: '/api/v1/invitations/accept',
+    });
+    expect(acceptanceResponse.statusCode, acceptanceResponse.body).toBe(200);
+
+    if (role === 'administrator') {
+      const membershipsResponse = await app.inject({
+        headers: { cookie: creator.cookie },
+        method: 'GET',
+        url: `/api/v1/worlds/${world.worldId}/memberships`,
+      });
+      expect(membershipsResponse.statusCode, membershipsResponse.body).toBe(200);
+      const membership = membershipsResponse
+        .json<{ items: Array<{ rowVersion: number; user: { id: string } }> }>()
+        .items.find((candidate) => candidate.user.id === invitee.userId);
+      expect(membership).toBeDefined();
+      const promotionResponse = await app.inject({
+        headers: mutationHeaders(creator, `promote-${invitee.userId}`),
+        method: 'PATCH',
+        payload: { expectedRowVersion: membership!.rowVersion, role },
+        url: `/api/v1/worlds/${world.worldId}/memberships/${invitee.userId}`,
+      });
+      expect(promotionResponse.statusCode, promotionResponse.body).toBe(200);
+    }
   }
 
   async function createCompiledCommerceWorld(): Promise<ApprovedWorld> {

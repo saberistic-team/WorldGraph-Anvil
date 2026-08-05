@@ -164,6 +164,54 @@ describe('deny-by-default authority evaluator', () => {
     });
   });
 
+  it('keeps governance civic authority policy-scoped and overrides explicit', () => {
+    expect(evaluateAuthority(subject('observer'), 'governance.read', world)).toMatchObject({
+      allowed: true,
+      ruleId: 'governance.membership_read',
+    });
+    expect(evaluateAuthority(subject('player'), 'governance.proposal.create', world)).toMatchObject(
+      { allowed: true, ruleId: 'governance.compiled_policy_recheck_required' },
+    );
+    expect(evaluateAuthority(subject('observer'), 'governance.ballot.cast', world)).toMatchObject({
+      allowed: false,
+      reasonCode: 'ACTION_NOT_PERMITTED',
+    });
+    expect(
+      evaluateAuthority(subject('administrator'), 'governance.initialize', world),
+    ).toMatchObject({ allowed: false, reasonCode: 'CREATOR_REQUIRED' });
+    expect(
+      evaluateAuthority({ platformRole: 'platform_admin', userId }, 'governance.initialize', world),
+    ).toMatchObject({
+      allowed: true,
+      ruleId: 'governance.platform_administrator_initialize',
+    });
+    expect(
+      evaluateAuthority(subject('creator'), 'governance.override.execute', world),
+    ).toMatchObject({ allowed: false, reasonCode: 'OVERRIDE_NOT_EXPLICIT' });
+    expect(
+      evaluateAuthority(subject('creator'), 'governance.override.execute', world, {
+        futureOfficeRoles: ['harbor-city:office:mayor'],
+        overrideRequested: true,
+      }),
+    ).toMatchObject({ allowed: true, ruleId: 'governance.creator_explicit_override' });
+    expect(
+      evaluateAuthority(subject('administrator'), 'governance.result.repair', world, {
+        overrideRequested: true,
+      }),
+    ).toMatchObject({ allowed: false, reasonCode: 'CREATOR_REQUIRED' });
+    expect(
+      evaluateAuthority(
+        { platformRole: 'platform_admin', userId },
+        'governance.result.repair',
+        world,
+        { overrideRequested: true },
+      ),
+    ).toMatchObject({
+      allowed: true,
+      ruleId: 'governance.platform_administrator_explicit_repair',
+    });
+  });
+
   it('keeps economy reads membership-scoped and controller commands playable', () => {
     expect(evaluateAuthority(subject('observer'), 'economy.read', world)).toMatchObject({
       allowed: true,

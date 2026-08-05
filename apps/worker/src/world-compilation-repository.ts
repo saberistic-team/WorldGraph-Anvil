@@ -2,14 +2,20 @@ import type { Pool, PoolClient, QueryResultRow } from 'pg';
 
 import {
   canonicalJson,
+  COMPILED_ARTIFACT_SCHEMA_VERSION,
   COMPILER_VERSION,
+  PREVIOUS_COMPILED_ARTIFACT_SCHEMA_VERSION,
   PREVIOUS_COMPILER_VERSION,
+  RETAINED_COMPILED_ARTIFACT_SCHEMA_VERSION,
+  RETAINED_COMPILER_VERSION,
   type CompiledArtifactV2,
   type CompiledArtifactV3,
+  type CompiledArtifactV4,
   type CompilerDiagnosticV1,
   type CompilerInputBundleV1,
   type PreviousCompilerInputBundleV1,
   type PrimitiveDraftInput,
+  type RetainedCompilerInputBundleV1,
   type WorldManifestV1,
   type WorldRole,
 } from '@worldgraph/contracts';
@@ -66,9 +72,11 @@ export interface WorldActivationResult {
   worldVersionId: string;
 }
 
-export type ActivatableCompilerInputBundle = CompilerInputBundleV1 | PreviousCompilerInputBundleV1;
+export type ActivatableCompilerInputBundle =
+  CompilerInputBundleV1 | PreviousCompilerInputBundleV1 | RetainedCompilerInputBundleV1;
 
-export type ActivatableCompiledArtifact = CompiledArtifactV2 | CompiledArtifactV3;
+export type ActivatableCompiledArtifact =
+  CompiledArtifactV2 | CompiledArtifactV3 | CompiledArtifactV4;
 
 /**
  * Persistence boundary used by the deterministic compiler runner. Keeping the
@@ -173,6 +181,91 @@ async function insertRows(
       .join(',');
     await client.query(`insert into ${table} (${columns.join(',')}) values ${tuples}`, values);
   }
+}
+
+interface CompiledSeedPlanActivationIdentity {
+  compilationRunId: string;
+  compiledArtifactId: string;
+  worldId: string;
+  worldVersionId: string;
+}
+
+/**
+ * Persists the compiler-owned economy and governance seed sources through the
+ * caller's activation transaction. Artifact 4 adds governance while retained
+ * artifact 2 and previous artifact 3 continue to write only their sealed
+ * economy-plan identities.
+ */
+export async function persistCompiledSeedPlansInActivationTransaction(
+  client: Pick<PoolClient, 'query'>,
+  identity: CompiledSeedPlanActivationIdentity,
+  artifact: ActivatableCompiledArtifact,
+  nextId: () => string,
+): Promise<void> {
+  const seedPlanSource =
+    artifact.artifactSchemaVersion === RETAINED_COMPILED_ARTIFACT_SCHEMA_VERSION
+      ? {
+          adapterId: 'CompiledEconomySeedAdapterV1',
+          compilerVersion: RETAINED_COMPILER_VERSION,
+          planSchemaVersion: 1,
+          sourceKind: 'compiler_1_1',
+        }
+      : {
+          adapterId: 'CompiledEconomySeedAdapterV2',
+          compilerVersion:
+            artifact.artifactSchemaVersion === PREVIOUS_COMPILED_ARTIFACT_SCHEMA_VERSION
+              ? PREVIOUS_COMPILER_VERSION
+              : COMPILER_VERSION,
+          planSchemaVersion: 2,
+          sourceKind: 'compiler_1_2',
+        };
+
+  await client.query(
+    `insert into compiled_economy_seed_plans(
+       id, world_id, world_version_id, compilation_run_id, source_artifact_id,
+       seed_plan_schema_version, source_kind, source_compiler_version,
+       source_adapter_id, source_adapter_version, canonical_plan, plan_hash,
+       source_artifact_hash
+     ) values (
+       $1,$2,$3,$4,$5,$6,$7,$8,
+       $9,'1.0.0',$10,decode($11,'hex'),decode($12,'hex')
+     )`,
+    [
+      nextId(),
+      identity.worldId,
+      identity.worldVersionId,
+      identity.compilationRunId,
+      identity.compiledArtifactId,
+      seedPlanSource.planSchemaVersion,
+      seedPlanSource.sourceKind,
+      seedPlanSource.compilerVersion,
+      seedPlanSource.adapterId,
+      JSON.stringify(artifact.world.economySeedPlan),
+      artifact.world.economySeedPlanHash,
+      artifact.contentHash,
+    ],
+  );
+
+  if (artifact.artifactSchemaVersion !== COMPILED_ARTIFACT_SCHEMA_VERSION) return;
+  await client.query(
+    `insert into compiled_governance_seed_plans(
+       id, world_id, world_version_id, source_kind, source_compiler_version,
+       source_artifact_hash, governance_seed_plan_schema_version, canonical_plan,
+       plan_hash, adopted_command_id, adopted_event_id
+     ) values (
+       $1,$2,$3,'compiler_1_3',$4,decode($5,'hex'),1,$6,
+       decode($7,'hex'),null,null
+     )`,
+    [
+      nextId(),
+      identity.worldId,
+      identity.worldVersionId,
+      COMPILER_VERSION,
+      artifact.contentHash,
+      JSON.stringify(artifact.world.governanceSeedPlan),
+      artifact.world.governanceSeedPlanHash,
+    ],
+  );
 }
 
 export class PostgresWorldCompilationRepository implements WorldCompilationRepository {
@@ -324,30 +417,24 @@ export class PostgresWorldCompilationRepository implements WorldCompilationRepos
     diagnostics: readonly CompilerDiagnosticV1[],
     nextId: () => string,
   ): Promise<WorldActivationResult | null> {
+    const retainedCompiler =
+      job.compilerVersion === RETAINED_COMPILER_VERSION &&
+      bundle.compilerVersion === RETAINED_COMPILER_VERSION &&
+      artifact.artifactSchemaVersion === RETAINED_COMPILED_ARTIFACT_SCHEMA_VERSION &&
+      artifact.world.compilerVersion === RETAINED_COMPILER_VERSION;
     const previousCompiler =
       job.compilerVersion === PREVIOUS_COMPILER_VERSION &&
       bundle.compilerVersion === PREVIOUS_COMPILER_VERSION &&
-      artifact.artifactSchemaVersion === 2;
+      artifact.artifactSchemaVersion === PREVIOUS_COMPILED_ARTIFACT_SCHEMA_VERSION &&
+      artifact.world.compilerVersion === PREVIOUS_COMPILER_VERSION;
     const currentCompiler =
       job.compilerVersion === COMPILER_VERSION &&
       bundle.compilerVersion === COMPILER_VERSION &&
-      artifact.artifactSchemaVersion === 3;
-    if (!previousCompiler && !currentCompiler) {
+      artifact.artifactSchemaVersion === COMPILED_ARTIFACT_SCHEMA_VERSION &&
+      artifact.world.compilerVersion === COMPILER_VERSION;
+    if (!retainedCompiler && !previousCompiler && !currentCompiler) {
       throw new Error('COMPILATION_ARTIFACT_VERSION_MISMATCH');
     }
-    const seedPlanSource = previousCompiler
-      ? {
-          adapterId: 'CompiledEconomySeedAdapterV1',
-          compilerVersion: PREVIOUS_COMPILER_VERSION,
-          planSchemaVersion: 1,
-          sourceKind: 'compiler_1_1',
-        }
-      : {
-          adapterId: 'CompiledEconomySeedAdapterV2',
-          compilerVersion: COMPILER_VERSION,
-          planSchemaVersion: 2,
-          sourceKind: 'compiler_1_2',
-        };
     let lockWaitMs = 0;
     for (let attempt = 0; attempt < 3; attempt += 1) {
       const client = await this.pool.connect();
@@ -516,30 +603,16 @@ export class PostgresWorldCompilationRepository implements WorldCompilationRepos
           ],
         );
 
-        await client.query(
-          `insert into compiled_economy_seed_plans(
-             id, world_id, world_version_id, compilation_run_id, source_artifact_id,
-             seed_plan_schema_version, source_kind, source_compiler_version,
-             source_adapter_id, source_adapter_version, canonical_plan, plan_hash,
-             source_artifact_hash
-           ) values (
-             $1,$2,$3,$4,$5,$6,$7,$8,
-             $9,'1.0.0',$10,decode($11,'hex'),decode($12,'hex')
-           )`,
-          [
-            nextId(),
-            job.worldId,
-            worldVersionId,
-            job.runId,
+        await persistCompiledSeedPlansInActivationTransaction(
+          client,
+          {
+            compilationRunId: job.runId,
             compiledArtifactId,
-            seedPlanSource.planSchemaVersion,
-            seedPlanSource.sourceKind,
-            seedPlanSource.compilerVersion,
-            seedPlanSource.adapterId,
-            JSON.stringify(artifact.world.economySeedPlan),
-            artifact.world.economySeedPlanHash,
-            artifact.contentHash,
-          ],
+            worldId: job.worldId,
+            worldVersionId,
+          },
+          artifact,
+          nextId,
         );
 
         const entityIds = new Map<string, string>();

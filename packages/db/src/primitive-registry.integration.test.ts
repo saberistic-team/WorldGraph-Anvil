@@ -7,6 +7,8 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
   buildPrimitiveIndexDocument,
   compareSemver,
+  GOVERNANCE_PRIMITIVES,
+  HARBOR_CITY_ECONOMY_PRIMITIVES,
   primitiveTagFrequencies,
   rankCandidates,
   retrievalTerms,
@@ -20,6 +22,17 @@ import { createDatabaseClient, importStarterPrimitives, type DatabaseClient } fr
 const migrationRoot = resolve('packages/db/drizzle');
 const query = 'guild-led energy-scarce floating city with a council and closed-loop credits';
 const curatorId = '155d9b48-4e26-5672-8854-9ff24f3262fd';
+const bundledPrimitives = [
+  ...STARTER_PRIMITIVES,
+  ...HARBOR_CITY_ECONOMY_PRIMITIVES,
+  ...GOVERNANCE_PRIMITIVES,
+];
+
+interface StarterOnlyEvidence {
+  audits: string;
+  harborVersions: string;
+  versions: string;
+}
 
 function applicationUrl(ownerUrl: string): string {
   const url = new URL(ownerUrl);
@@ -32,6 +45,7 @@ describe('primitive registry migration and bundled catalog', () => {
   let app: DatabaseClient;
   let client: DatabaseClient;
   let container: Awaited<ReturnType<PostgreSqlContainer['start']>>;
+  let starterOnlyEvidence: StarterOnlyEvidence;
 
   beforeAll(async () => {
     container = await new PostgreSqlContainer('worldgraph-postgres:test')
@@ -41,13 +55,27 @@ describe('primitive registry migration and bundled catalog', () => {
       .start();
     client = createDatabaseClient(container.getConnectionUri(), 'primitive-registry-owner-test');
     await migrate(client.db, { migrationsFolder: migrationRoot });
-    await expect(importStarterPrimitives(client.pool)).resolves.toEqual({
-      imported: 19,
+    await expect(
+      importStarterPrimitives(client.pool, { includeHarborCityEconomy: false }),
+    ).resolves.toEqual({
+      imported: STARTER_PRIMITIVES.length,
       unchanged: 0,
+    });
+    const starterOnly = await client.pool.query<StarterOnlyEvidence>(
+      `select
+        (select count(*) from primitive_versions where lifecycle = 'published')::text as versions,
+        (select count(*) from primitive_versions where id = any($1::uuid[]))::text as "harborVersions",
+        (select count(*) from security_audit_records where action = 'primitive.seed_published')::text as audits`,
+      [HARBOR_CITY_ECONOMY_PRIMITIVES.map((primitive) => primitive.versionId)],
+    );
+    starterOnlyEvidence = starterOnly.rows[0]!;
+    await expect(importStarterPrimitives(client.pool)).resolves.toEqual({
+      imported: HARBOR_CITY_ECONOMY_PRIMITIVES.length + GOVERNANCE_PRIMITIVES.length,
+      unchanged: STARTER_PRIMITIVES.length,
     });
     await expect(importStarterPrimitives(client.pool)).resolves.toEqual({
       imported: 0,
-      unchanged: 19,
+      unchanged: bundledPrimitives.length,
     });
     app = createDatabaseClient(
       applicationUrl(container.getConnectionUri()),
@@ -61,7 +89,12 @@ describe('primitive registry migration and bundled catalog', () => {
     await container?.stop();
   });
 
-  it('imports all reviewed rows, resolved locks, lexical documents, jobs, and audits exactly once', async () => {
+  it('supports starter-only upgrades, then imports all reviewed defaults exactly once with accurate provenance', async () => {
+    expect(starterOnlyEvidence).toEqual({
+      audits: String(STARTER_PRIMITIVES.length),
+      harborVersions: '0',
+      versions: String(STARTER_PRIMITIVES.length),
+    });
     const counts = await client.pool.query<{
       audits: string;
       dependencies: string;
@@ -81,16 +114,80 @@ describe('primitive registry migration and bundled catalog', () => {
         (select count(*) from security_audit_records where action = 'primitive.seed_published')::text as audits`,
     );
     expect(counts.rows[0]).toEqual({
-      audits: '16',
+      audits: String(bundledPrimitives.length),
       dependencies: String(
-        STARTER_PRIMITIVES.reduce((sum, entry) => sum + entry.input.dependencies.length, 0),
+        bundledPrimitives.reduce((sum, entry) => sum + entry.input.dependencies.length, 0),
       ),
-      families: '16',
-      jobs: '16',
-      search_documents: '16',
-      tags: String(STARTER_PRIMITIVES.reduce((sum, entry) => sum + entry.input.tags.length, 0)),
-      versions: '16',
+      families: String(new Set(bundledPrimitives.map((entry) => entry.familyId)).size),
+      jobs: String(bundledPrimitives.length),
+      search_documents: String(bundledPrimitives.length),
+      tags: String(bundledPrimitives.reduce((sum, entry) => sum + entry.input.tags.length, 0)),
+      versions: String(bundledPrimitives.length),
     });
+    const audits = await client.pool.query<{
+      key: string;
+      redacted_metadata: Record<string, unknown>;
+      semver: string;
+    }>(
+      `select f.stable_key::text as key,version.semver,audit.redacted_metadata
+         from security_audit_records audit
+         join primitive_versions version on version.id = audit.target_id
+         join primitive_families f on f.id = version.family_id
+        where audit.action = 'primitive.seed_published'
+        order by f.stable_key,worldgraph_semver_sort_key(version.semver) collate "C",
+          version.semver collate "C"`,
+    );
+    expect(audits.rows).toHaveLength(bundledPrimitives.length);
+    for (const primitive of bundledPrimitives) {
+      const provenance = primitive.input.provenance;
+      expect(
+        audits.rows.find(
+          (audit) => audit.key === primitive.input.key && audit.semver === primitive.input.version,
+        )?.redacted_metadata,
+      ).toEqual({
+        catalog: provenance.sourceId,
+        contentHash: primitive.contentHash,
+        review: { id: provenance.reviewId, status: provenance.reviewStatus },
+        source: {
+          id: provenance.sourceId,
+          type: provenance.sourceType,
+          version: provenance.sourceVersion,
+        },
+      });
+    }
+    const governance = GOVERNANCE_PRIMITIVES[0]!;
+    await expect(
+      client.pool.query<{ content_hash: string; family_id: string; version_id: string }>(
+        `select encode(version.content_hash,'hex') as content_hash,
+                family.id as family_id,version.id as version_id
+           from primitive_versions version
+           join primitive_families family on family.id=version.family_id
+          where family.stable_key=$1 and version.semver=$2`,
+        [governance.input.key, governance.input.version],
+      ),
+    ).resolves.toMatchObject({
+      rows: [
+        {
+          content_hash: governance.contentHash,
+          family_id: governance.familyId,
+          version_id: governance.versionId,
+        },
+      ],
+    });
+    const electionFamilyVersions = await client.pool.query<{
+      lifecycle: string;
+      semver: string;
+    }>(
+      `select lifecycle::text,semver
+         from primitive_versions
+        where family_id=$1
+        order by worldgraph_semver_sort_key(semver) collate "C",semver collate "C"`,
+      [governance.familyId],
+    );
+    expect(electionFamilyVersions.rows).toEqual([
+      { lifecycle: 'published', semver: '1.0.0' },
+      { lifecycle: 'published', semver: '1.1.0' },
+    ]);
     const locks = await client.pool.query<{ resolved: string; total: string }>(
       `select count(*)::text as total,
               count(*) filter (where resolved_version_id is not null and octet_length(resolved_content_hash) = 32)::text as resolved
@@ -131,11 +228,12 @@ describe('primitive registry migration and bundled catalog', () => {
                 ) as lexeme(parts)
                 cross join lateral unnest(string_to_array(lexeme.parts[2], ',')) as position(value)
                 join requested on requested.term = lexeme.parts[1]
-               where d.search_vector @@ to_tsquery('simple', $2)
+               where d.primitive_version_id = any($3::uuid[])
+                 and d.search_vector @@ to_tsquery('simple', $2)
                group by d.primitive_version_id
             )
        select id, lexical_score from scored order by id`,
-      [terms, tsquery],
+      [terms, tsquery, STARTER_PRIMITIVES.map((entry) => entry.versionId)],
     );
     const actual = new Map(databaseScores.rows.map((row) => [row.id, row.lexical_score]));
     const frequencies = primitiveTagFrequencies(

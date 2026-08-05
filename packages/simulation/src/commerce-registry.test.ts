@@ -22,21 +22,21 @@ const context = {
 const targetId = '018f8652-3cb6-7d52-904b-cce7901d7e26';
 
 describe('commerce simulation process registry', () => {
-  it('registers immutable system-dispatch descriptors in registry 2', () => {
+  it('retains immutable commerce system-dispatch descriptors in registry 3', () => {
     const descriptors = [
       COMPLETE_PRODUCTION_RUN_DESCRIPTOR_V1,
       SETTLE_PAYROLL_DESCRIPTOR_V1,
       EXPIRE_MARKET_LISTING_DESCRIPTOR_V1,
       ASSESS_PERIODIC_TAX_DESCRIPTOR_V1,
     ];
-    expect(simulationProcessDescriptorsV1()).toHaveLength(5);
+    expect(simulationProcessDescriptorsV1()).toHaveLength(11);
     for (const descriptor of descriptors) {
       expect(descriptor).toMatchObject({
         authorityPolicy: 'system_scheduler',
         maxEvents: 0,
         maxSchedules: 0,
         processVersion: '1.0.0',
-        registryVersion: 2,
+        registryVersion: 3,
       });
       expect(Object.isFrozen(descriptor)).toBe(true);
     }

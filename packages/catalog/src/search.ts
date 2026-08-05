@@ -133,6 +133,15 @@ const REVIEWED_INDEX_BOOSTS: Readonly<Record<string, ReviewedIndexBoost>> = {
   },
 };
 
+const REVIEWED_INDEX_BOOST_VERSIONS: Readonly<Record<string, ReviewedIndexBoost>> = {
+  'worldgraph.election.council-ballot@1.1.0': {
+    contentHash: 'b30fb010b82c935206cb8128bdfd5a4e573e1cec01b2de708e2167f97bdb0bde',
+    documentationTerms: ['plurality'],
+    primaryTerms: ['election'],
+    version: '1.1.0',
+  },
+};
+
 export interface PrimitiveIndexDocument {
   documentation: string;
   normalizedText: string;
@@ -144,7 +153,9 @@ function resolveReviewedBoost(
   input: PrimitiveDraftInput,
   required: boolean,
 ): ReviewedIndexBoost | null {
-  const policy = REVIEWED_INDEX_BOOSTS[input.key];
+  const policy =
+    REVIEWED_INDEX_BOOST_VERSIONS[`${input.key}@${input.version}`] ??
+    REVIEWED_INDEX_BOOSTS[input.key];
   if (!policy) {
     if (required) throw new Error(`PRIMITIVE_INDEX_POLICY_MISSING:${input.key}@${input.version}`);
     return null;

@@ -153,6 +153,7 @@ export const EconomySummaryTransportSchema = Type.Object(
         hash: Type.Union([EconomyHashSchema, Type.Null()]),
         sourceKind: Type.Union([
           Type.Literal('compiler_1_1'),
+          Type.Literal('compiler_1_2'),
           Type.Literal('legacy_adapter'),
           Type.Null(),
         ]),

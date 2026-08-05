@@ -1297,30 +1297,43 @@ describe.sequential('M06 operator ledger/replay CLI against PostgreSQL', () => {
            ledger_entry_id uuid not null, reconciliation_run_id uuid not null
          )`,
       );
-      await owner.pool.query(
-        `insert into operator_commerce_repair_stub.prepare_fixture values ($1,$2,$3,$4);
-         insert into operator_commerce_repair_stub.commerce_projection_repair_plans
-           values ($5,$1,decode($6,'hex'),$2);
-         insert into operator_commerce_repair_stub.approval_fixture
-           values ($5,$7,$8,$6,$9);
-         insert into operator_commerce_repair_stub.execution_fixture
-           values ($5,$7,$6,$10,$11,$12,$13)`,
-        [
-          worldId,
-          firstAdminId,
-          reason,
-          plan,
-          repairPlanId,
-          plan.planHash,
-          secondAdminId,
-          approvalId,
-          approval,
-          repairCommandId,
-          repairEventId,
-          repairLedgerEntryId,
-          postRepairReconciliationRunId,
-        ],
-      );
+      const fixtureConnection = await owner.pool.connect();
+      try {
+        await fixtureConnection.query('begin');
+        await fixtureConnection.query(
+          `insert into operator_commerce_repair_stub.prepare_fixture values ($1,$2,$3,$4)`,
+          [worldId, firstAdminId, reason, plan],
+        );
+        await fixtureConnection.query(
+          `insert into operator_commerce_repair_stub.commerce_projection_repair_plans
+             values ($1,$2,decode($3,'hex'),$4)`,
+          [repairPlanId, worldId, plan.planHash, firstAdminId],
+        );
+        await fixtureConnection.query(
+          `insert into operator_commerce_repair_stub.approval_fixture
+             values ($1,$2,$3,$4,$5)`,
+          [repairPlanId, secondAdminId, approvalId, plan.planHash, approval],
+        );
+        await fixtureConnection.query(
+          `insert into operator_commerce_repair_stub.execution_fixture
+             values ($1,$2,$3,$4,$5,$6,$7)`,
+          [
+            repairPlanId,
+            secondAdminId,
+            plan.planHash,
+            repairCommandId,
+            repairEventId,
+            repairLedgerEntryId,
+            postRepairReconciliationRunId,
+          ],
+        );
+        await fixtureConnection.query('commit');
+      } catch (error) {
+        await fixtureConnection.query('rollback').catch(() => undefined);
+        throw error;
+      } finally {
+        fixtureConnection.release();
+      }
       await owner.pool.query(
         `create function operator_commerce_repair_stub.worldgraph_prepare_commerce_projection_repair(
            checked_world_id uuid, checked_prepared_by_user_id uuid, checked_reason text

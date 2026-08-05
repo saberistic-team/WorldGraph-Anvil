@@ -3,15 +3,15 @@ import { tmpdir } from 'node:os';
 
 import { describe, expect, it } from 'vitest';
 
-import { canonicalJson, type CompiledArtifactV3 } from '@worldgraph/contracts';
+import { canonicalJson, type CompiledArtifactV4 } from '@worldgraph/contracts';
 
 import { runWorldgraphCli } from './cli.js';
 import { sha256Utf8 } from './hash.js';
 import { compileWorld } from './pipeline.js';
 import { createGoldenCompilerInput } from './test-fixture.js';
-import golden from './fixtures/harbor-city.m9.golden.json';
+import golden from './fixtures/harbor-city.m10.golden.json';
 
-function resignArtifact(artifact: CompiledArtifactV3): CompiledArtifactV3 {
+function resignArtifact(artifact: CompiledArtifactV4): CompiledArtifactV4 {
   artifact.canonicalBytes = canonicalJson(artifact.world);
   artifact.contentHash = sha256Utf8(artifact.canonicalBytes);
   return artifact;

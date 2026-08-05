@@ -54,6 +54,21 @@ import {
   type WorldEconomyReconciledPayloadV1,
   type WorldEconomyRepairedPayloadV1,
 } from './economy.js';
+import {
+  ElectionBallotRecordedPublicEventV1Schema as ElectionBallotRecordedPublicPayloadV1Schema,
+  ElectionBallotRecordedSecretEventV1Schema as ElectionBallotRecordedSecretPayloadV1Schema,
+  GovernanceCandidacyChangedEventV1Schema as GovernanceCandidacyChangedPayloadV1Schema,
+  GovernanceLawVersionActivatedEventV1Schema as GovernanceLawVersionActivatedPayloadV1Schema,
+  GovernanceLifecycleEventV1Schema as GovernanceLifecyclePayloadV1Schema,
+  GovernanceOfficeTermChangedEventV1Schema as GovernanceOfficeTermChangedPayloadV1Schema,
+  GovernanceOverrideExecutedEventV1Schema as GovernanceOverrideExecutedPayloadV1Schema,
+  GovernanceRepairAppendedEventV1Schema as GovernanceRepairAppendedPayloadV1Schema,
+  GovernanceResultFinalizedEventV1Schema as GovernanceResultFinalizedPayloadV1Schema,
+  GovernanceSeedPlanAdoptedEventV1Schema as GovernanceSeedPlanAdoptedPayloadV1Schema,
+  ProposalBallotRecordedPublicEventV1Schema as ProposalBallotRecordedPublicPayloadV1Schema,
+  ProposalBallotRecordedSecretEventV1Schema as ProposalBallotRecordedSecretPayloadV1Schema,
+  WorldGovernanceInitializedEventV1Schema as WorldGovernanceInitializedPayloadV1Schema,
+} from './governance.js';
 import { ManifestJsonObjectSchema } from './manifests.js';
 import { WorldRoleSchema } from './authority.js';
 import {
@@ -267,6 +282,31 @@ export const WorldCommandRejectionCodeSchema = Type.Union([
   Type.Literal('LISTING_EXPIRED'),
   Type.Literal('LISTING_NOT_OPEN'),
   Type.Literal('POLICY_INVALID'),
+  Type.Literal('GOVERNANCE_NOT_INITIALIZED'),
+  Type.Literal('GOVERNANCE_ALREADY_INITIALIZED'),
+  Type.Literal('GOVERNANCE_CONTESTS_PAUSED'),
+  Type.Literal('GOVERNANCE_VOTING_PAUSED'),
+  Type.Literal('GOVERNANCE_ENACTMENT_PAUSED'),
+  Type.Literal('GOVERNANCE_OVERRIDES_PAUSED'),
+  Type.Literal('GOVERNANCE_RATE_LIMITED'),
+  Type.Literal('GOVERNANCE_POLICY_DENIED'),
+  Type.Literal('PROPOSAL_STATE_INVALID'),
+  Type.Literal('CANDIDACY_STATE_INVALID'),
+  Type.Literal('ELECTION_STATE_INVALID'),
+  Type.Literal('BALLOT_INELIGIBLE'),
+  Type.Literal('BALLOT_WINDOW_CLOSED'),
+  Type.Literal('BALLOT_ALREADY_CAST'),
+  Type.Literal('BALLOT_REPLACEMENT_NOT_ALLOWED'),
+  Type.Literal('TALLY_NOT_DUE'),
+  Type.Literal('TALLY_CHECKSUM_MISMATCH'),
+  Type.Literal('QUORUM_NOT_MET'),
+  Type.Literal('TERM_CONFLICT'),
+  Type.Literal('LAW_VERSION_CONFLICT'),
+  Type.Literal('ENACTMENT_FAILED'),
+  Type.Literal('RESULT_FINALIZED'),
+  Type.Literal('GOVERNANCE_REPAIR_CONFLICT'),
+  Type.Literal('TWO_PERSON_APPROVAL_REQUIRED'),
+  Type.Literal('SECRET_TALLY_ROLE_UNAVAILABLE'),
   Type.Literal('CONFLICT'),
   Type.Literal('INTERNAL_COMMAND_FAILED'),
 ]);
@@ -814,6 +854,58 @@ export const WorldCommerceProjectionRepairedEventV1Schema = Type.Object(
   },
   { additionalProperties: false },
 );
+export const ProposalBallotRecordedPublicDomainEventV1Schema = domainEventVariant(
+  'ProposalBallotRecordedPublicV1',
+  ProposalBallotRecordedPublicPayloadV1Schema,
+);
+export const ProposalBallotRecordedSecretDomainEventV1Schema = domainEventVariant(
+  'ProposalBallotRecordedSecretV1',
+  ProposalBallotRecordedSecretPayloadV1Schema,
+);
+export const ElectionBallotRecordedPublicDomainEventV1Schema = domainEventVariant(
+  'ElectionBallotRecordedPublicV1',
+  ElectionBallotRecordedPublicPayloadV1Schema,
+);
+export const ElectionBallotRecordedSecretDomainEventV1Schema = domainEventVariant(
+  'ElectionBallotRecordedSecretV1',
+  ElectionBallotRecordedSecretPayloadV1Schema,
+);
+export const GovernanceLifecycleDomainEventV1Schema = domainEventVariant(
+  'GovernanceLifecycleChangedV1',
+  GovernanceLifecyclePayloadV1Schema,
+);
+export const WorldGovernanceInitializedDomainEventV1Schema = domainEventVariant(
+  'WorldGovernanceInitializedV1',
+  WorldGovernanceInitializedPayloadV1Schema,
+);
+export const GovernanceSeedPlanAdoptedDomainEventV1Schema = domainEventVariant(
+  'GovernanceSeedPlanAdoptedV1',
+  GovernanceSeedPlanAdoptedPayloadV1Schema,
+);
+export const GovernanceCandidacyChangedDomainEventV1Schema = domainEventVariant(
+  'GovernanceCandidacyChangedV1',
+  GovernanceCandidacyChangedPayloadV1Schema,
+);
+export const GovernanceResultFinalizedDomainEventV1Schema = domainEventVariant(
+  'GovernanceResultFinalizedV1',
+  GovernanceResultFinalizedPayloadV1Schema,
+);
+export const GovernanceLawVersionActivatedDomainEventV1Schema = domainEventVariant(
+  'GovernanceLawVersionActivatedV1',
+  GovernanceLawVersionActivatedPayloadV1Schema,
+);
+export const GovernanceOfficeTermChangedDomainEventV1Schema = domainEventVariant(
+  'GovernanceOfficeTermChangedV1',
+  GovernanceOfficeTermChangedPayloadV1Schema,
+);
+export const GovernanceOverrideExecutedDomainEventV1Schema = domainEventVariant(
+  'GovernanceOverrideExecutedV1',
+  GovernanceOverrideExecutedPayloadV1Schema,
+);
+export const GovernanceRepairAppendedDomainEventV1Schema = domainEventVariant(
+  'GovernanceRepairAppendedV1',
+  GovernanceRepairAppendedPayloadV1Schema,
+);
 
 export const DomainEventEnvelopeV1Schema = Type.Union(
   [
@@ -882,6 +974,19 @@ export const DomainEventEnvelopeV1Schema = Type.Union(
     TreasuryRevenueRecordedEventV1Schema,
     WorldCommerceReconciledEventV1Schema,
     WorldCommerceProjectionRepairedEventV1Schema,
+    ProposalBallotRecordedPublicDomainEventV1Schema,
+    ProposalBallotRecordedSecretDomainEventV1Schema,
+    ElectionBallotRecordedPublicDomainEventV1Schema,
+    ElectionBallotRecordedSecretDomainEventV1Schema,
+    WorldGovernanceInitializedDomainEventV1Schema,
+    GovernanceSeedPlanAdoptedDomainEventV1Schema,
+    GovernanceCandidacyChangedDomainEventV1Schema,
+    GovernanceLifecycleDomainEventV1Schema,
+    GovernanceResultFinalizedDomainEventV1Schema,
+    GovernanceLawVersionActivatedDomainEventV1Schema,
+    GovernanceOfficeTermChangedDomainEventV1Schema,
+    GovernanceOverrideExecutedDomainEventV1Schema,
+    GovernanceRepairAppendedDomainEventV1Schema,
   ],
   { $id: 'DomainEventEnvelopeV1' },
 );
@@ -995,6 +1100,7 @@ export const WorldHistoryCategorySchema = Type.Union([
   Type.Literal('repair'),
   Type.Literal('simulation'),
   Type.Literal('economy'),
+  Type.Literal('governance'),
   Type.Literal('ownership'),
 ]);
 
@@ -1209,6 +1315,45 @@ export type TreasuryRevenueRecordedEventV1 = Static<typeof TreasuryRevenueRecord
 export type WorldCommerceReconciledEventV1 = Static<typeof WorldCommerceReconciledEventV1Schema>;
 export type WorldCommerceProjectionRepairedEventV1 = Static<
   typeof WorldCommerceProjectionRepairedEventV1Schema
+>;
+export type ProposalBallotRecordedPublicDomainEventV1 = Static<
+  typeof ProposalBallotRecordedPublicDomainEventV1Schema
+>;
+export type ProposalBallotRecordedSecretDomainEventV1 = Static<
+  typeof ProposalBallotRecordedSecretDomainEventV1Schema
+>;
+export type ElectionBallotRecordedPublicDomainEventV1 = Static<
+  typeof ElectionBallotRecordedPublicDomainEventV1Schema
+>;
+export type ElectionBallotRecordedSecretDomainEventV1 = Static<
+  typeof ElectionBallotRecordedSecretDomainEventV1Schema
+>;
+export type GovernanceLifecycleDomainEventV1 = Static<
+  typeof GovernanceLifecycleDomainEventV1Schema
+>;
+export type WorldGovernanceInitializedDomainEventV1 = Static<
+  typeof WorldGovernanceInitializedDomainEventV1Schema
+>;
+export type GovernanceSeedPlanAdoptedDomainEventV1 = Static<
+  typeof GovernanceSeedPlanAdoptedDomainEventV1Schema
+>;
+export type GovernanceCandidacyChangedDomainEventV1 = Static<
+  typeof GovernanceCandidacyChangedDomainEventV1Schema
+>;
+export type GovernanceResultFinalizedDomainEventV1 = Static<
+  typeof GovernanceResultFinalizedDomainEventV1Schema
+>;
+export type GovernanceLawVersionActivatedDomainEventV1 = Static<
+  typeof GovernanceLawVersionActivatedDomainEventV1Schema
+>;
+export type GovernanceOfficeTermChangedDomainEventV1 = Static<
+  typeof GovernanceOfficeTermChangedDomainEventV1Schema
+>;
+export type GovernanceOverrideExecutedDomainEventV1 = Static<
+  typeof GovernanceOverrideExecutedDomainEventV1Schema
+>;
+export type GovernanceRepairAppendedDomainEventV1 = Static<
+  typeof GovernanceRepairAppendedDomainEventV1Schema
 >;
 export type DomainEventEnvelopeV1 = Static<typeof DomainEventEnvelopeV1Schema>;
 export type LedgerEntryKind = Static<typeof LedgerEntryKindSchema>;

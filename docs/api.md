@@ -24,6 +24,7 @@ Registered only when operational smoke is enabled. Requires Content-Type applica
 - `POST /api/v1/auth/login` uses the same generic `AUTHENTICATION_FAILED` for unknown email/bad password, rotates a presented session, and returns a new cookie session. Registration/login have separate privacy-hashed account and coarse-network limits.
 - `GET /api/v1/auth/me` requires the opaque session and returns only safe user fields plus idle/absolute expiry.
 - `POST /api/v1/auth/csrf` requires strict Origin+session, rotates the session-bound double-submit value, and returns it for the browser client.
+- `POST /api/v1/auth/reauthenticate` requires strict Origin, an active session, matching CSRF, and the caller's current password. Its strict body contains `worldId` plus the complete reviewed `ExecuteCreatorOverrideV1` or `RepairGovernanceResultV1` command. A successful response contains only `proofToken` and `expiresAt`; the opaque proof is short-lived and the server binds it to the current session, user, world, command ID/type, and canonical full-command hash. Separate session and coarse-network limits apply. Wrong credentials return generic `REAUTHENTICATION_FAILED`; the password is never copied into a command, audit detail, event, log, or response.
 - `POST /api/v1/auth/logout` requires Origin+session+CSRF while active, revokes immediately, clears cookies, and returns 204. Retries after absence/revocation also return 204.
 
 ## Worlds and membership
@@ -255,3 +256,50 @@ The worker now derives those invalidations from committed commerce domain facts 
 `ReconcileWorldCommerceV1` records immutable comparison evidence and changes reconciliation status only; it cannot edit inventory, reservation, production, payroll, listing, trade, tax, treasury, or checkpoint data. Its current evidence model binds private canonical command payload/authority facts and compares exact inventory/reservation, recipe version, production snapshot/transition/movement, employment/payroll, listing/trade, tax-policy/assessment, and checkpoint material. `RepairEconomicProjectionV1` has a strict internal contract, but it is deliberately absent from `COMMERCE_PUBLIC_COMMAND_TYPES`, the API command registry, and every HTTP route. The only callable path is the owner-authorized `economy projection-repair-prepare|approve|execute` operator workflow in `operations.md`. That workflow can correct only inventory quantity/reservation projections to the exact values rebuilt from immutable movement/reservation facts; it cannot alter an immutable movement, trade, work/payroll fact, assessment, command, event, or ledger entry.
 
 Dead-outbox retry is likewise not an HTTP API. The reviewed `pnpm outbox retry` owner workflow appends a private retry intent and requeues the same terminal message without changing its event identity or resetting attempts; see `operations.md`. API, browser, and ordinary worker credentials cannot call its database function or read its private reason.
+
+## Governance, proposals, ballots, and elections
+
+Contract/runtime schema 10 retains API v1 and adds governance schema 1, policy DSL 1, tally/result algorithms 1, and simulation process registry 3. Compiler `1.3.0`/artifact 4 emits the native governance seed plan; exact compiler `1.2.0`/artifact 3, `1.1.0`/artifact 2, and `1.0.0`/artifact 1 remain explicit verification lanes. Existing active worlds receive no silent charter or election state.
+
+`POST /api/v1/worlds/:id/commands` additionally accepts these public schema-1 variants:
+
+- `InitializeWorldGovernanceV1` and reasoned `AdoptGovernanceSeedPlanV1`;
+- `CreateProposalV1`, `SponsorProposalV1`, `WithdrawProposalV1`, and `CastProposalBallotV1`;
+- `NominateCandidateV1`, `AcceptNominationV1`, and `CastElectionBallotV1`;
+- charter-authorized `AppointOfficeholderV1` and `RemoveOfficeholderV1`;
+- explicit `ExecuteCreatorOverrideV1` and linked `RepairGovernanceResultV1`.
+
+Every request binds command/idempotency identity, expected world/state/aggregate version, and authoritative expected tick. The server derives actor mode, controlled character, membership roles, held offices, resource identity, active law/office/charter sources, and the final policy decision. A client cannot select `system`, scheduler causation, eligibility membership, tally/result, or creator-override provenance.
+
+`OpenProposalVotingV1`, `CloseAndTallyProposalV1`, `CertifyAndEnactProposalV1`, `OpenElectionV1`, `CloseAndTallyElectionV1`, and `CertifyElectionV1` are worker-only. They are derived from one already-completed PostgreSQL scheduled action and deterministic occurrence/command/result identities. Public transport rejects them.
+
+The authorized read routes are:
+
+- `GET /api/v1/worlds/:id/governance/charter`;
+- `GET /api/v1/worlds/:id/governance/institutions`;
+- `GET /api/v1/worlds/:id/governance/laws`;
+- `GET /api/v1/worlds/:id/governance/offices` and `/terms`;
+- `GET /api/v1/worlds/:id/governance/proposals`;
+- `GET /api/v1/worlds/:id/governance/proposals/:proposalId/receipt` and `/result`;
+- `GET /api/v1/worlds/:id/governance/elections`;
+- `GET /api/v1/worlds/:id/governance/elections/:electionId/candidates`, `/receipt`, and `/result`;
+- `GET /api/v1/worlds/:id/governance/audit`;
+- `GET /api/v1/worlds/:id/governance/stream` for an authorized resumable SSE invalidation stream.
+
+Lists use strict bounded filters and signed filter-bound cursors and include projection revision/status. Cross-world or unauthorized targets are non-enumerating. SSE clients may resume with the last safe cursor; messages carry safe event/aggregate/revision identity only and require an authorized refetch. They are not ballot, legal, or fiscal authority.
+
+Public ballot responses follow the exact contest disclosure mode. Secret ballot commands omit the choice from stored ordinary command payload/response material. Ordinary APIs, events, history, SSE, logs, traces, metrics, and browser state never expose a voter-choice linkage; the caller receives only a safe receipt and permitted aggregate/public detail. This is a trusted-server privacy boundary, not coercion resistance or a public cryptographic election protocol.
+
+Proposal actions are a strict schema-1 union: create/amend/repeal law, bounded tax update, public-project authorization, office appointment, and future patch-approval reference. Certification reloads every target, tick, version, policy and treasury/economy invariant. A passing result either commits all effects with its event/ledger/outbox set or records `passed_but_enactment_failed` after rolling every effect back. Certification compensation and supported recount/repair operations append linked evidence and never update the immutable result.
+
+Stable governance rejections include `GOVERNANCE_NOT_INITIALIZED`, `GOVERNANCE_ALREADY_INITIALIZED`, `SEED_PLAN_INCOMPATIBLE`, `SEED_PLAN_HASH_MISMATCH`, `GOVERNANCE_POLICY_DENIED`, `GOVERNANCE_RATE_LIMITED`, independent contest/voting/enactment/override pause codes, eligibility/window/replacement/duplicate ballot failures, proposal/election/candidacy state failures, tally/result checksum mismatch, early tally, law/term conflict, failed enactment, repair conflict, missing second approval, stale tick/version/idempotency conflict, and inherited validation/authorization/availability errors. Public errors never contain secret choices, eligibility members, raw policy documents, SQL, or stack traces.
+
+Creator mode does not silently bypass civic authority: an ordinary creator command resolves through the creator's current character. The override route requires the dedicated command, exact confirmation, bounded reason and before/after impact, supported durable effect, and optional fresh distinct one-use approval. Override and repair facts use visibly distinct event, history and ledger classifications.
+
+`ExecuteCreatorOverrideV1` and `RepairGovernanceResultV1` additionally require the raw reauthentication proof in `x-recent-credential-proof`. The proof is consumed inside the same serializable transaction as the command, after the governance write gate opens and before any provenance or domain fact is appended. A lost-response retry may reuse it only for the exact same terminal command; changing any command field fails closed. Missing proof returns `403 RECENT_CREDENTIAL_REQUIRED`; malformed, expired, consumed for another command/session/user/world, or otherwise mismatched proof returns the indistinguishable `403 RECENT_CREDENTIAL_INVALID`. The proof header is never persisted in command payloads or emitted through events, history, outbox, logs, traces, or metrics.
+
+When `GOVERNANCE_TWO_PERSON_CONTROL_ENABLED=true`, a distinct reviewer issues the second approval through `POST /api/v1/auth/governance-approval`. This is an authenticated unsafe request and therefore requires the reviewer's active session, exact allowed `Origin`, matching CSRF cookie/header, a fresh `idempotency-key`, and JSON body `{ worldId, command, password }`. `command` is the complete typed `ExecuteCreatorOverrideV1` or `RepairGovernanceResultV1` transport—including its already frozen command/idempotency IDs, actor mode, expected versions/tick, confirmation, reason/impact, and payload—with `payload.approvalId` set to `null`. The response is `{ approvalId, commandId, expiresAt }`; it never returns the password or binding hash.
+
+The initiator must preserve every reviewed command byte and add only the returned `approvalId` to the frozen payload before performing their own `/api/v1/auth/reauthenticate` and command submission. Approval hashing deliberately normalizes only that eventual field to `null`; a changed command ID, idempotency key, actor mode, target, tick, version, reason, impact, confirmation, or effect does not match. The approver must remain a distinct, active current creator/world administrator or platform administrator with an unrevoked session through the bounded expiry. An approval is world-bound, command-bound, single-use, invalid after role/session/auth-version change, and grants no command authority by itself. Exact approval-request replay uses the same reviewer, idempotency key, world, and command. The Govern operator page consumes the resulting UUID at its frozen-command attachment step; approval issuance remains a separate reviewer/API workflow so one browser session cannot impersonate both people.
+
+The complete storage, policy, privacy, tally, enactment, and correction boundary is documented in `governance-schema.md` and ADR 0015.

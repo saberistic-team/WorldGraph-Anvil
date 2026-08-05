@@ -4,6 +4,7 @@ export * from './diagnostics.js';
 export * from './economy-seed.js';
 export * from './emit.js';
 export * from './hash.js';
+export * from './governance-seed.js';
 export * from './input.js';
 export * from './invariants.js';
 export * from './keys.js';

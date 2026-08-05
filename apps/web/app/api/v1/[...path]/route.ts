@@ -1,4 +1,10 @@
-import { callApi, proxyFailure, proxyResponse } from '../../../lib/api';
+import {
+  API_PROXY_TIMEOUT_MS,
+  ARTIFACT_PROXY_TIMEOUT_MS,
+  callApi,
+  proxyFailure,
+  proxyResponse,
+} from '../../../lib/api';
 
 export const MAX_PROXY_BODY_BYTES = 160 * 1024;
 
@@ -59,6 +65,22 @@ const allowlist: Record<string, RegExp[]> = {
     new RegExp(`^worlds/${uuid}/economy/treasury$`, 'u'),
     new RegExp(`^worlds/${uuid}/economy/tax-assessments$`, 'u'),
     new RegExp(`^worlds/${uuid}/economy/reconciliation$`, 'u'),
+    new RegExp(`^worlds/${uuid}/governance/charter$`, 'u'),
+    new RegExp(`^worlds/${uuid}/governance/capabilities$`, 'u'),
+    new RegExp(`^worlds/${uuid}/governance/institutions$`, 'u'),
+    new RegExp(`^worlds/${uuid}/governance/laws$`, 'u'),
+    new RegExp(`^worlds/${uuid}/governance/offices$`, 'u'),
+    new RegExp(`^worlds/${uuid}/governance/terms$`, 'u'),
+    new RegExp(`^worlds/${uuid}/governance/proposals$`, 'u'),
+    new RegExp(`^worlds/${uuid}/governance/proposals/${uuid}$`, 'u'),
+    new RegExp(`^worlds/${uuid}/governance/proposals/${uuid}/receipt$`, 'u'),
+    new RegExp(`^worlds/${uuid}/governance/proposals/${uuid}/result$`, 'u'),
+    new RegExp(`^worlds/${uuid}/governance/elections$`, 'u'),
+    new RegExp(`^worlds/${uuid}/governance/elections/${uuid}$`, 'u'),
+    new RegExp(`^worlds/${uuid}/governance/elections/${uuid}/candidates$`, 'u'),
+    new RegExp(`^worlds/${uuid}/governance/elections/${uuid}/receipt$`, 'u'),
+    new RegExp(`^worlds/${uuid}/governance/elections/${uuid}/result$`, 'u'),
+    new RegExp(`^worlds/${uuid}/governance/audit$`, 'u'),
     new RegExp(`^worlds/${uuid}/assets$`, 'u'),
     new RegExp(`^worlds/${uuid}/assets/${economyStableKey}$`, 'u'),
     new RegExp(`^worlds/${uuid}/asset-transfer-offers$`, 'u'),
@@ -73,7 +95,7 @@ const allowlist: Record<string, RegExp[]> = {
     new RegExp(`^worlds/${uuid}/memberships/${uuid}$`, 'u'),
   ],
   POST: [
-    /^auth\/(register|login|logout|csrf)$/u,
+    /^auth\/(register|login|logout|csrf|reauthenticate)$/u,
     /^primitive-retrievals$/u,
     /^admin\/primitives\/drafts$/u,
     new RegExp(`^${adminPrimitiveVersionPath}/(?:publish|deprecate|reindex)$`, 'u'),
@@ -155,7 +177,14 @@ async function forward(request: Request, context: RouteContext): Promise<Respons
     );
   }
   const headers = new Headers();
-  for (const name of ['accept', 'content-type', 'cookie', 'idempotency-key', 'x-csrf-token']) {
+  for (const name of [
+    'accept',
+    'content-type',
+    'cookie',
+    'idempotency-key',
+    'x-csrf-token',
+    'x-recent-credential-proof',
+  ]) {
     const value = request.headers.get(name);
     if (value) headers.set(name, value);
   }
@@ -172,7 +201,11 @@ async function forward(request: Request, context: RouteContext): Promise<Respons
       if (body === null) return payloadTooLarge();
       init.body = body;
     }
-    const response = await callApi(`/api/v1/${path}${new URL(request.url).search}`, init);
+    const response = await callApi(
+      `/api/v1/${path}${new URL(request.url).search}`,
+      init,
+      path.endsWith('/artifact') ? ARTIFACT_PROXY_TIMEOUT_MS : API_PROXY_TIMEOUT_MS,
+    );
     return proxyResponse(response);
   } catch {
     return proxyFailure();

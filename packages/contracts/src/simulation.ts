@@ -10,6 +10,7 @@ import {
   SIMULATION_FAILURE_SCHEMA_VERSION,
   SIMULATION_OUTCOME_SCHEMA_VERSION,
   SIMULATION_PRNG_ALGORITHM_VERSION,
+  LEGACY_SIMULATION_PROCESS_REGISTRY_VERSION,
   PREVIOUS_SIMULATION_PROCESS_REGISTRY_VERSION,
   SIMULATION_PROCESS_SCHEMA_VERSION,
   SIMULATION_PROCESS_REGISTRY_VERSION,
@@ -23,6 +24,7 @@ export const COMPLETE_PRODUCTION_RUN_PROCESS_VERSION = '1.0.0' as const;
 export const SETTLE_PAYROLL_PROCESS_VERSION = '1.0.0' as const;
 export const EXPIRE_MARKET_LISTING_PROCESS_VERSION = '1.0.0' as const;
 export const ASSESS_PERIODIC_TAX_PROCESS_VERSION = '1.0.0' as const;
+export const GOVERNANCE_SCHEDULE_PROCESS_VERSION = '1.0.0' as const;
 export const WORLD_CLOCK_FAILURE_SOURCE_TYPE = 'WorldClockV1' as const;
 export const WORLD_CLOCK_FAILURE_SOURCE_VERSION = '1.0.0' as const;
 export const DEFAULT_SIMULATION_EPOCH_AT = '2000-01-01T00:00:00.000Z' as const;
@@ -139,6 +141,12 @@ export const ScheduledActionTypeSchema = Type.Union([
   Type.Literal('SettlePayrollV1'),
   Type.Literal('ExpireMarketListingV1'),
   Type.Literal('AssessPeriodicTaxV1'),
+  Type.Literal('OpenProposalVotingV1'),
+  Type.Literal('CloseAndTallyProposalV1'),
+  Type.Literal('CertifyAndEnactProposalV1'),
+  Type.Literal('OpenElectionV1'),
+  Type.Literal('CloseAndTallyElectionV1'),
+  Type.Literal('CertifyElectionV1'),
 ]);
 export const CommerceScheduledActionTypeSchema = Type.Union([
   Type.Literal('CompleteProductionRunV1'),
@@ -146,8 +154,17 @@ export const CommerceScheduledActionTypeSchema = Type.Union([
   Type.Literal('ExpireMarketListingV1'),
   Type.Literal('AssessPeriodicTaxV1'),
 ]);
+export const GovernanceScheduledActionTypeSchema = Type.Union([
+  Type.Literal('OpenProposalVotingV1'),
+  Type.Literal('CloseAndTallyProposalV1'),
+  Type.Literal('CertifyAndEnactProposalV1'),
+  Type.Literal('OpenElectionV1'),
+  Type.Literal('CloseAndTallyElectionV1'),
+  Type.Literal('CertifyElectionV1'),
+]);
 export const SimulationProcessTypeSchema = ScheduledActionTypeSchema;
 export const SimulationProcessRegistryVersionSchema = Type.Union([
+  Type.Literal(LEGACY_SIMULATION_PROCESS_REGISTRY_VERSION),
   Type.Literal(PREVIOUS_SIMULATION_PROCESS_REGISTRY_VERSION),
   Type.Literal(SIMULATION_PROCESS_REGISTRY_VERSION),
 ]);
@@ -229,11 +246,43 @@ export const AssessPeriodicTaxScheduledActionPayloadV1Schema = Type.Object(
   { taxPolicyId: SimulationUuidSchema },
   { $id: 'AssessPeriodicTaxScheduledActionPayloadV1', additionalProperties: false },
 );
+export const OpenProposalVotingScheduledActionPayloadV1Schema = Type.Object(
+  { proposalId: SimulationUuidSchema },
+  { $id: 'OpenProposalVotingScheduledActionPayloadV1', additionalProperties: false },
+);
+export const CloseAndTallyProposalScheduledActionPayloadV1Schema = Type.Object(
+  { proposalId: SimulationUuidSchema },
+  { $id: 'CloseAndTallyProposalScheduledActionPayloadV1', additionalProperties: false },
+);
+export const CertifyAndEnactProposalScheduledActionPayloadV1Schema = Type.Object(
+  { proposalId: SimulationUuidSchema },
+  { $id: 'CertifyAndEnactProposalScheduledActionPayloadV1', additionalProperties: false },
+);
+export const OpenElectionScheduledActionPayloadV1Schema = Type.Object(
+  { electionId: SimulationUuidSchema },
+  { $id: 'OpenElectionScheduledActionPayloadV1', additionalProperties: false },
+);
+export const CloseAndTallyElectionScheduledActionPayloadV1Schema = Type.Object(
+  { electionId: SimulationUuidSchema },
+  { $id: 'CloseAndTallyElectionScheduledActionPayloadV1', additionalProperties: false },
+);
+export const CertifyElectionScheduledActionPayloadV1Schema = Type.Object(
+  { electionId: SimulationUuidSchema },
+  { $id: 'CertifyElectionScheduledActionPayloadV1', additionalProperties: false },
+);
 export const CommerceScheduledActionPayloadV1Schema = Type.Union([
   CompleteProductionRunScheduledActionPayloadV1Schema,
   SettlePayrollScheduledActionPayloadV1Schema,
   ExpireMarketListingScheduledActionPayloadV1Schema,
   AssessPeriodicTaxScheduledActionPayloadV1Schema,
+]);
+export const GovernanceScheduledActionPayloadV1Schema = Type.Union([
+  OpenProposalVotingScheduledActionPayloadV1Schema,
+  CloseAndTallyProposalScheduledActionPayloadV1Schema,
+  CertifyAndEnactProposalScheduledActionPayloadV1Schema,
+  OpenElectionScheduledActionPayloadV1Schema,
+  CloseAndTallyElectionScheduledActionPayloadV1Schema,
+  CertifyElectionScheduledActionPayloadV1Schema,
 ]);
 
 const ScheduledActionCommonFields = {
@@ -289,6 +338,24 @@ export const ScheduledActionV1Schema = Type.Union(
       ExpireMarketListingScheduledActionPayloadV1Schema,
     ),
     scheduledActionVariant('AssessPeriodicTaxV1', AssessPeriodicTaxScheduledActionPayloadV1Schema),
+    scheduledActionVariant(
+      'OpenProposalVotingV1',
+      OpenProposalVotingScheduledActionPayloadV1Schema,
+    ),
+    scheduledActionVariant(
+      'CloseAndTallyProposalV1',
+      CloseAndTallyProposalScheduledActionPayloadV1Schema,
+    ),
+    scheduledActionVariant(
+      'CertifyAndEnactProposalV1',
+      CertifyAndEnactProposalScheduledActionPayloadV1Schema,
+    ),
+    scheduledActionVariant('OpenElectionV1', OpenElectionScheduledActionPayloadV1Schema),
+    scheduledActionVariant(
+      'CloseAndTallyElectionV1',
+      CloseAndTallyElectionScheduledActionPayloadV1Schema,
+    ),
+    scheduledActionVariant('CertifyElectionV1', CertifyElectionScheduledActionPayloadV1Schema),
   ],
   { $id: 'ScheduledActionV1' },
 );
@@ -364,6 +431,12 @@ export const SimulationProcessDescriptorV1Schema = Type.Object(
       Type.Literal('SettlePayrollScheduledActionPayloadV1'),
       Type.Literal('ExpireMarketListingScheduledActionPayloadV1'),
       Type.Literal('AssessPeriodicTaxScheduledActionPayloadV1'),
+      Type.Literal('OpenProposalVotingScheduledActionPayloadV1'),
+      Type.Literal('CloseAndTallyProposalScheduledActionPayloadV1'),
+      Type.Literal('CertifyAndEnactProposalScheduledActionPayloadV1'),
+      Type.Literal('OpenElectionScheduledActionPayloadV1'),
+      Type.Literal('CloseAndTallyElectionScheduledActionPayloadV1'),
+      Type.Literal('CertifyElectionScheduledActionPayloadV1'),
     ]),
     processSchemaVersion: Type.Literal(SIMULATION_PROCESS_SCHEMA_VERSION),
     processType: SimulationProcessTypeSchema,
@@ -443,6 +516,27 @@ export const ProposedScheduledActionV1Schema = Type.Union(
     proposedScheduledActionVariant(
       'AssessPeriodicTaxV1',
       AssessPeriodicTaxScheduledActionPayloadV1Schema,
+    ),
+    proposedScheduledActionVariant(
+      'OpenProposalVotingV1',
+      OpenProposalVotingScheduledActionPayloadV1Schema,
+    ),
+    proposedScheduledActionVariant(
+      'CloseAndTallyProposalV1',
+      CloseAndTallyProposalScheduledActionPayloadV1Schema,
+    ),
+    proposedScheduledActionVariant(
+      'CertifyAndEnactProposalV1',
+      CertifyAndEnactProposalScheduledActionPayloadV1Schema,
+    ),
+    proposedScheduledActionVariant('OpenElectionV1', OpenElectionScheduledActionPayloadV1Schema),
+    proposedScheduledActionVariant(
+      'CloseAndTallyElectionV1',
+      CloseAndTallyElectionScheduledActionPayloadV1Schema,
+    ),
+    proposedScheduledActionVariant(
+      'CertifyElectionV1',
+      CertifyElectionScheduledActionPayloadV1Schema,
     ),
   ],
   { $id: 'ProposedScheduledActionV1' },
@@ -717,6 +811,27 @@ export const ScheduledActionCreatedPayloadV1Schema = Type.Union(
       'AssessPeriodicTaxV1',
       AssessPeriodicTaxScheduledActionPayloadV1Schema,
     ),
+    scheduledActionCreatedVariant(
+      'OpenProposalVotingV1',
+      OpenProposalVotingScheduledActionPayloadV1Schema,
+    ),
+    scheduledActionCreatedVariant(
+      'CloseAndTallyProposalV1',
+      CloseAndTallyProposalScheduledActionPayloadV1Schema,
+    ),
+    scheduledActionCreatedVariant(
+      'CertifyAndEnactProposalV1',
+      CertifyAndEnactProposalScheduledActionPayloadV1Schema,
+    ),
+    scheduledActionCreatedVariant('OpenElectionV1', OpenElectionScheduledActionPayloadV1Schema),
+    scheduledActionCreatedVariant(
+      'CloseAndTallyElectionV1',
+      CloseAndTallyElectionScheduledActionPayloadV1Schema,
+    ),
+    scheduledActionCreatedVariant(
+      'CertifyElectionV1',
+      CertifyElectionScheduledActionPayloadV1Schema,
+    ),
   ],
   { $id: 'ScheduledActionCreatedPayloadV1' },
 );
@@ -873,6 +988,7 @@ export type SimulationActorV1 = Static<typeof SimulationActorV1Schema>;
 export type SimulationSystemActorV1 = Static<typeof SimulationSystemActorV1Schema>;
 export type ScheduledActionType = Static<typeof ScheduledActionTypeSchema>;
 export type CommerceScheduledActionType = Static<typeof CommerceScheduledActionTypeSchema>;
+export type GovernanceScheduledActionType = Static<typeof GovernanceScheduledActionTypeSchema>;
 export type SimulationProcessRegistryVersion = Static<
   typeof SimulationProcessRegistryVersionSchema
 >;
@@ -899,8 +1015,29 @@ export type ExpireMarketListingScheduledActionPayloadV1 = Static<
 export type AssessPeriodicTaxScheduledActionPayloadV1 = Static<
   typeof AssessPeriodicTaxScheduledActionPayloadV1Schema
 >;
+export type OpenProposalVotingScheduledActionPayloadV1 = Static<
+  typeof OpenProposalVotingScheduledActionPayloadV1Schema
+>;
+export type CloseAndTallyProposalScheduledActionPayloadV1 = Static<
+  typeof CloseAndTallyProposalScheduledActionPayloadV1Schema
+>;
+export type CertifyAndEnactProposalScheduledActionPayloadV1 = Static<
+  typeof CertifyAndEnactProposalScheduledActionPayloadV1Schema
+>;
+export type OpenElectionScheduledActionPayloadV1 = Static<
+  typeof OpenElectionScheduledActionPayloadV1Schema
+>;
+export type CloseAndTallyElectionScheduledActionPayloadV1 = Static<
+  typeof CloseAndTallyElectionScheduledActionPayloadV1Schema
+>;
+export type CertifyElectionScheduledActionPayloadV1 = Static<
+  typeof CertifyElectionScheduledActionPayloadV1Schema
+>;
 export type CommerceScheduledActionPayloadV1 = Static<
   typeof CommerceScheduledActionPayloadV1Schema
+>;
+export type GovernanceScheduledActionPayloadV1 = Static<
+  typeof GovernanceScheduledActionPayloadV1Schema
 >;
 export type ScheduledActionV1 = Static<typeof ScheduledActionV1Schema>;
 export type SimulationBatchRunV1 = Static<typeof SimulationBatchRunV1Schema>;

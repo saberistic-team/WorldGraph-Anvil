@@ -1,0 +1,595 @@
+{
+  "annotations": { "list": [] },
+  "description": "Governance command, scheduler, tally, bounded PostgreSQL operational snapshot, inherited outbox and deployment-owned integrity signals. PostgreSQL remains authoritative and secret ballot selections are never telemetry.",
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "liveNow": false,
+  "panels": [
+    {
+      "description": "Code-owned panels use bounded OTLP labels. The governance scheduler refreshes its PostgreSQL operational snapshot after successful discovery; shared outbox panels inherit the global outbox worker histograms. Panels marked external require a deployment-owned read-only PostgreSQL or database-audit exporter.",
+      "gridPos": { "h": 3, "w": 24, "x": 0, "y": 0 },
+      "id": 1,
+      "options": {
+        "content": "# Governance v1\nCommands, deterministic schedules, tallies, proposal/election state aggregates and explicit operator actions are visible without exporting voter, choice, world, contest, receipt, result, policy or checksum identities. Snapshot series use only allowlisted `target_kind` and `state`; global outbox panels are shared infrastructure context, not governance attribution. **External** integrity panels remain empty until the deployment loads its reviewed read-only exporter contract.",
+        "mode": "markdown"
+      },
+      "pluginVersion": "11.0.0",
+      "title": "Metric provenance and privacy",
+      "type": "text"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "description": "Accepted/rejected/failed governance commands grouped only by bounded command type and outcome.",
+      "fieldConfig": { "defaults": { "unit": "ops" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 3 },
+      "id": 2,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        {
+          "editorMode": "code",
+          "expr": "sum by (command_type, outcome) (rate(worldgraph_governance_commands_total[$__rate_interval]))",
+          "legendFormat": "{{command_type}} · {{outcome}}",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Command outcomes",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "description": "System lifecycle command outcomes derived from completed PostgreSQL schedules.",
+      "fieldConfig": { "defaults": { "unit": "ops" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 3 },
+      "id": 3,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        {
+          "editorMode": "code",
+          "expr": "sum by (action_type, outcome) (rate(worldgraph_governance_scheduled_commands_total[$__rate_interval]))",
+          "legendFormat": "{{action_type}} · {{outcome}}",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Scheduled command outcomes",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "description": "Worker-observed p95 lateness in authoritative world ticks.",
+      "fieldConfig": { "defaults": { "min": 0, "unit": "short" }, "overrides": [] },
+      "gridPos": { "h": 7, "w": 8, "x": 0, "y": 11 },
+      "id": 4,
+      "options": {
+        "legend": { "calcs": [], "displayMode": "list", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        {
+          "editorMode": "code",
+          "expr": "histogram_quantile(0.95, sum by (le, action_type) (rate(worldgraph_governance_scheduler_lag_ticks_bucket[$__rate_interval])))",
+          "legendFormat": "{{action_type}}",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Scheduler lag p95 (ticks)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "description": "Deterministic tally p95 grouped by proposal/election only.",
+      "fieldConfig": { "defaults": { "min": 0, "unit": "ms" }, "overrides": [] },
+      "gridPos": { "h": 7, "w": 8, "x": 8, "y": 11 },
+      "id": 5,
+      "options": {
+        "legend": { "calcs": [], "displayMode": "list", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        {
+          "editorMode": "code",
+          "expr": "histogram_quantile(0.95, sum by (le, command_type) (rate(worldgraph_governance_tally_duration_ms_bucket[$__rate_interval])))",
+          "legendFormat": "{{command_type}}",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Tally duration p95",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "description": "Average completed-but-unhandled candidates seen per reconciliation sweep; histogram samples are used rather than an authority gauge.",
+      "fieldConfig": { "defaults": { "min": 0, "unit": "short" }, "overrides": [] },
+      "gridPos": { "h": 7, "w": 8, "x": 16, "y": 11 },
+      "id": 6,
+      "options": {
+        "legend": { "calcs": [], "displayMode": "list", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "single", "sort": "none" }
+      },
+      "targets": [
+        {
+          "editorMode": "code",
+          "expr": "sum(rate(worldgraph_governance_scheduled_effects_pending_sum[$__rate_interval])) / clamp_min(sum(rate(worldgraph_governance_scheduled_effects_pending_count[$__rate_interval])), 0.001)",
+          "legendFormat": "average pending",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Pending schedule discovery",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "description": "Any checksum mismatch is an integrity incident.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "red", "value": 1 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 5, "w": 4, "x": 0, "y": 18 },
+      "id": 7,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "auto",
+        "wideLayout": true
+      },
+      "targets": [
+        {
+          "editorMode": "code",
+          "expr": "sum(increase(worldgraph_governance_tally_checksum_mismatches_total[$__range]))",
+          "instant": true,
+          "legendFormat": "mismatch",
+          "range": false,
+          "refId": "A"
+        }
+      ],
+      "title": "Tally mismatches",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "description": "Passed proposals whose typed effects rolled back and require audited compensation.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 1 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 5, "w": 4, "x": 4, "y": 18 },
+      "id": 8,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "auto",
+        "wideLayout": true
+      },
+      "targets": [
+        {
+          "editorMode": "code",
+          "expr": "sum(increase(worldgraph_governance_enactment_failures_total[$__range]))",
+          "instant": true,
+          "legendFormat": "failed",
+          "range": false,
+          "refId": "A"
+        }
+      ],
+      "title": "Enactment failures",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "description": "Accepted explicit creator/administrator overrides in the selected range.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 1 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 5, "w": 4, "x": 8, "y": 18 },
+      "id": 9,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "auto",
+        "wideLayout": true
+      },
+      "targets": [
+        {
+          "editorMode": "code",
+          "expr": "sum(increase(worldgraph_governance_overrides_total{outcome=\"accepted\"}[$__range]))",
+          "instant": true,
+          "legendFormat": "override",
+          "range": false,
+          "refId": "A"
+        }
+      ],
+      "title": "Overrides used",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "description": "Accepted linked governance repairs in the selected range.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 1 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 5, "w": 4, "x": 12, "y": 18 },
+      "id": 10,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "auto",
+        "wideLayout": true
+      },
+      "targets": [
+        {
+          "editorMode": "code",
+          "expr": "sum(increase(worldgraph_governance_repairs_total{outcome=\"accepted\"}[$__range]))",
+          "instant": true,
+          "legendFormat": "repair",
+          "range": false,
+          "refId": "A"
+        }
+      ],
+      "title": "Repairs used",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "description": "External: open contests past their authoritative close tick.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "red", "value": 1 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 5, "w": 4, "x": 16, "y": 18 },
+      "id": 11,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "auto",
+        "wideLayout": true
+      },
+      "targets": [
+        {
+          "editorMode": "code",
+          "expr": "max(worldgraph_governance_open_contests_stuck)",
+          "instant": true,
+          "legendFormat": "stuck",
+          "range": false,
+          "refId": "A"
+        }
+      ],
+      "title": "Stuck contests (external)",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "description": "External: unexpected restricted ballot-data access from deployment audit logs.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "red", "value": 1 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 5, "w": 4, "x": 20, "y": 18 },
+      "id": 12,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "auto",
+        "wideLayout": true
+      },
+      "targets": [
+        {
+          "editorMode": "code",
+          "expr": "sum(increase(worldgraph_governance_unexpected_secret_access_total[$__range]))",
+          "instant": true,
+          "legendFormat": "access",
+          "range": false,
+          "refId": "A"
+        }
+      ],
+      "title": "Secret access (external)",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "description": "Bounded authority and ballot rejection signals. These are abuse/UX indicators, not authority decisions by themselves.",
+      "fieldConfig": { "defaults": { "unit": "ops" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 23 },
+      "id": 13,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        {
+          "editorMode": "code",
+          "expr": "sum by (action) (rate(worldgraph_governance_authority_denies_total[$__rate_interval]))",
+          "legendFormat": "authority · {{action}}",
+          "range": true,
+          "refId": "A"
+        },
+        {
+          "editorMode": "code",
+          "expr": "sum by (rejection_code) (rate(worldgraph_governance_ballot_rejections_total[$__rate_interval]))",
+          "legendFormat": "ballot · {{rejection_code}}",
+          "range": true,
+          "refId": "B"
+        }
+      ],
+      "title": "Denials and ballot rejections",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "description": "Current PostgreSQL-derived proposal and election counts grouped only by allowlisted target kind and state. Use max, not sum, when several workers expose the same snapshot.",
+      "fieldConfig": { "defaults": { "min": 0, "unit": "short" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 31 },
+      "id": 14,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        {
+          "editorMode": "code",
+          "expr": "max by (target_kind, state) (worldgraph_governance_targets)",
+          "legendFormat": "{{target_kind}} · {{state}}",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Governance targets by state",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "description": "PostgreSQL-derived eligible and turnout aggregates grouped only by allowlisted target kind and state. These are operational observations, not authority.",
+      "fieldConfig": { "defaults": { "min": 0, "unit": "short" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 31 },
+      "id": 15,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        {
+          "editorMode": "code",
+          "expr": "max by (target_kind, state) (worldgraph_governance_eligible)",
+          "legendFormat": "eligible · {{target_kind}} · {{state}}",
+          "range": true,
+          "refId": "A"
+        },
+        {
+          "editorMode": "code",
+          "expr": "max by (target_kind, state) (worldgraph_governance_turnout)",
+          "legendFormat": "turnout · {{target_kind}} · {{state}}",
+          "range": true,
+          "refId": "B"
+        }
+      ],
+      "title": "Eligibility and turnout by state",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "description": "Maximum active-world gap between the authoritative world revision and governance projection revision. The gauge deliberately carries no world label.",
+      "fieldConfig": { "defaults": { "min": 0, "unit": "short" }, "overrides": [] },
+      "gridPos": { "h": 7, "w": 6, "x": 0, "y": 39 },
+      "id": 16,
+      "options": {
+        "legend": { "calcs": [], "displayMode": "list", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "single", "sort": "none" }
+      },
+      "targets": [
+        {
+          "editorMode": "code",
+          "expr": "max(worldgraph_governance_projection_lag_revisions)",
+          "legendFormat": "max revision lag",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Governance projection lag",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "description": "Current pending governance-related outbox messages from the bounded PostgreSQL operational snapshot.",
+      "fieldConfig": { "defaults": { "min": 0, "unit": "short" }, "overrides": [] },
+      "gridPos": { "h": 7, "w": 6, "x": 6, "y": 39 },
+      "id": 17,
+      "options": {
+        "legend": { "calcs": [], "displayMode": "list", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "single", "sort": "none" }
+      },
+      "targets": [
+        {
+          "editorMode": "code",
+          "expr": "max(worldgraph_governance_outbox_pending)",
+          "legendFormat": "governance pending",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Governance outbox pending",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "description": "Average backlog observed by the shared outbox worker over the interval. This inherited metric covers all domains and must not be read as governance-only backlog.",
+      "fieldConfig": { "defaults": { "min": 0, "unit": "short" }, "overrides": [] },
+      "gridPos": { "h": 7, "w": 6, "x": 12, "y": 39 },
+      "id": 18,
+      "options": {
+        "legend": { "calcs": [], "displayMode": "list", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "single", "sort": "none" }
+      },
+      "targets": [
+        {
+          "editorMode": "code",
+          "expr": "sum(rate(worldgraph_outbox_backlog_sum[$__rate_interval])) / clamp_min(sum(rate(worldgraph_outbox_backlog_count[$__rate_interval])), 0.001)",
+          "legendFormat": "global average backlog",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Global outbox backlog",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "description": "Average oldest-pending age observed by the shared outbox worker over the interval. This inherited metric covers all domains.",
+      "fieldConfig": { "defaults": { "min": 0, "unit": "ms" }, "overrides": [] },
+      "gridPos": { "h": 7, "w": 6, "x": 18, "y": 39 },
+      "id": 19,
+      "options": {
+        "legend": { "calcs": [], "displayMode": "list", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "single", "sort": "none" }
+      },
+      "targets": [
+        {
+          "editorMode": "code",
+          "expr": "sum(rate(worldgraph_outbox_oldest_age_ms_sum[$__rate_interval])) / clamp_min(sum(rate(worldgraph_outbox_oldest_age_ms_count[$__rate_interval])), 0.001)",
+          "legendFormat": "global average oldest age",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Global outbox oldest age",
+      "type": "timeseries"
+    }
+  ],
+  "refresh": "30s",
+  "schemaVersion": 39,
+  "tags": ["worldgraph", "governance", "milestone-10"],
+  "templating": {
+    "list": [
+      {
+        "current": {},
+        "hide": 0,
+        "includeAll": false,
+        "label": "Prometheus",
+        "multi": false,
+        "name": "DS_PROMETHEUS",
+        "options": [],
+        "query": "prometheus",
+        "refresh": 1,
+        "regex": "",
+        "skipUrlSync": false,
+        "type": "datasource"
+      }
+    ]
+  },
+  "time": { "from": "now-6h", "to": "now" },
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "WorldGraph Governance v1",
+  "uid": "worldgraph-governance-v1",
+  "version": 1,
+  "weekStart": ""
+}

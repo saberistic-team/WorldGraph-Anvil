@@ -309,7 +309,7 @@ export function completeFallbackProvenance(
       sourceType: 'prompt',
     });
   }
-  if (provenance.length > 512) {
+  if (provenance.length > 1_024) {
     throw new DeterministicFallbackUnavailableError(
       'Fallback field provenance exceeds the generation envelope limit.',
     );

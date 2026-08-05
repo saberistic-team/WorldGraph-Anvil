@@ -25,6 +25,7 @@ import {
 import { manifestCatalogSnapshotHash, manifestContentHash, sha256 } from './canonical.js';
 import type { ManifestCatalogSnapshot, ManifestPrimitiveDefinition } from './catalog.js';
 import { worldgraphEconomyExtensionIssues } from './economy-extension.js';
+import { worldgraphGovernanceExtensionIssues } from './governance-extension.js';
 import type { SafeYamlLocation } from './yaml.js';
 
 export type { ManifestCatalogSnapshot } from './catalog.js';
@@ -404,7 +405,13 @@ export function validateWorldManifest(
   locations?: ReadonlyMap<string, SafeYamlLocation>,
 ): ManifestValidationResult {
   const diagnostics: ManifestDiagnostic[] = [];
-  const boundedIssues = validateBoundedJson(input).issues;
+  const manifestJsonBounds = {
+    maxArrayItems: 512,
+    maxDepth: 16,
+    maxNodes: 4_000,
+    maxProperties: 1_000,
+  } as const;
+  const boundedIssues = validateBoundedJson(input, manifestJsonBounds).issues;
   let contentScanInput = input;
   if (input !== null && !Array.isArray(input) && typeof input === 'object') {
     const record = input as Record<string, unknown>;
@@ -420,10 +427,20 @@ export function validateWorldManifest(
       ) {
         delete safeExtensions['worldgraph.economy'];
       }
+      const governanceExtension = safeExtensions['worldgraph.governance'];
+      if (
+        governanceExtension !== null &&
+        typeof governanceExtension === 'object' &&
+        !Array.isArray(governanceExtension) &&
+        (governanceExtension as Record<string, unknown>).schemaVersion === 1
+      ) {
+        delete safeExtensions['worldgraph.governance'];
+      }
       contentScanInput = { ...record, extensions: safeExtensions };
     }
   }
   const executableIssues = validateBoundedJson(contentScanInput, {
+    ...manifestJsonBounds,
     rejectExecutableContent: true,
   }).issues.filter((entry) =>
     [
@@ -830,6 +847,19 @@ export function validateWorldManifest(
         locations,
         [],
         economyIssue.relatedPointers,
+      ),
+    );
+  }
+  for (const governanceIssue of worldgraphGovernanceExtensionIssues(manifest)) {
+    diagnostics.push(
+      diagnostic(
+        'error',
+        governanceIssue.code,
+        governanceIssue.pointer,
+        governanceIssue.message,
+        locations,
+        [],
+        governanceIssue.relatedPointers,
       ),
     );
   }

@@ -728,6 +728,7 @@ test('manager can configure the full business, employment, production, and listi
   });
 
   await page.getByRole('link', { exact: true, name: 'Production' }).click();
+  await expect(page.getByRole('heading', { level: 1, name: 'Production' })).toBeVisible();
   await page.getByLabel('Managed business').selectOption(businessId);
   await page.getByLabel('Active facility').selectOption(facilityId);
   await page.getByLabel('Enabled immutable recipe version').selectOption(recipeId);

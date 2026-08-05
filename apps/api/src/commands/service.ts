@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 
 import { canonicalJson, type Clock } from '@worldgraph/contracts';
 import { telemetry } from '@worldgraph/observability';
+import type { GovernanceRecentCredentialProof } from '@worldgraph/governance-command';
 
 import { ApplicationError } from '../application/errors.js';
 import type { AuthenticatedActor } from '../identity/service.js';
@@ -40,11 +41,19 @@ export class WorldCommandService {
     worldId: string,
     request: SubmitWorldCommand,
     requestId: string,
+    recentCredential?: GovernanceRecentCredentialProof,
   ) {
     const startedAt = performance.now();
     const commandType = boundedCommandType(request.type);
     try {
-      const outcome = await this.bus.submit(actor, worldId, request, requestId, this.clock.now());
+      const outcome = await this.bus.submit(
+        actor,
+        worldId,
+        request,
+        requestId,
+        this.clock.now(),
+        recentCredential,
+      );
       const rejectionCode =
         outcome.result.status === 'rejected' || outcome.result.status === 'failed'
           ? outcome.result.rejectionCode

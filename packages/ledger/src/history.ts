@@ -59,6 +59,23 @@ export const HISTORY_TEMPLATES_V1 = {
   'history.genesis.compiled': 'The compiled world was anchored at version {worldVersionNumber}.',
   'history.genesis.imported':
     'The existing world state was truthfully imported at version {worldVersionNumber}.',
+  'history.governance.ballot_recorded':
+    'A {ballotMode} ballot receipt was recorded for a {contestType}.',
+  'history.governance.candidacy_changed':
+    'A candidacy changed to {status} for election {electionId}.',
+  'history.governance.initialized':
+    'World governance was initialized from seed plan {seedPlanHash}.',
+  'history.governance.law_activated':
+    'Law version {lawVersion} became authoritative at tick {effectiveFromTick}.',
+  'history.governance.lifecycle_changed':
+    'A {aggregateType} changed to {status} at tick {occurredTick}.',
+  'history.governance.override_executed':
+    'An explicit {actorMode} governance override was executed ({reasonCode}).',
+  'history.governance.repair_appended': 'A linked governance repair was appended ({repairKind}).',
+  'history.governance.result_finalized': 'An immutable {aggregateType} result was finalized.',
+  'history.governance.seed_plan_adopted':
+    'A reviewed governance seed plan was adopted ({adoptionReasonHash}).',
+  'history.governance.term_changed': 'Office seat {seatIndex} term status changed to {status}.',
   'history.invitation.accepted': 'Invitation {invitationId} was accepted.',
   'history.invitation.created': 'Invitation {invitationId} was created for role {intendedRole}.',
   'history.invitation.revoked': 'Invitation {invitationId} was revoked.',
@@ -814,6 +831,175 @@ function historyFields(event: DomainEventEnvelopeV1): {
         targetType: 'commerce_projection_repair',
         titleKey: 'history.commerce.projection_repaired',
         visibility: 'operator',
+      };
+    case 'ProposalBallotRecordedPublicV1':
+      return {
+        category: 'governance',
+        summaryArgs: {
+          ballotMode: 'public',
+          contestType: 'proposal',
+          disclosure: event.payload.disclosure,
+          turnoutCount: event.payload.turnoutCount,
+          ...('receiptHash' in event.payload ? { receiptHash: event.payload.receiptHash } : {}),
+        },
+        targetId: event.payload.proposalId,
+        targetType: 'proposal',
+        titleKey: 'history.governance.ballot_recorded',
+        visibility: 'member',
+      };
+    case 'ProposalBallotRecordedSecretV1':
+      return {
+        category: 'governance',
+        summaryArgs: {
+          ballotMode: 'secret',
+          contestType: 'proposal',
+          receiptHash: event.payload.receiptHash,
+        },
+        targetId: event.payload.proposalId,
+        targetType: 'proposal',
+        titleKey: 'history.governance.ballot_recorded',
+        visibility: 'member',
+      };
+    case 'ElectionBallotRecordedPublicV1':
+      return {
+        category: 'governance',
+        summaryArgs: {
+          ballotMode: 'public',
+          contestType: 'election',
+          disclosure: event.payload.disclosure,
+          turnoutCount: event.payload.turnoutCount,
+          ...('receiptHash' in event.payload ? { receiptHash: event.payload.receiptHash } : {}),
+        },
+        targetId: event.payload.electionId,
+        targetType: 'election',
+        titleKey: 'history.governance.ballot_recorded',
+        visibility: 'member',
+      };
+    case 'ElectionBallotRecordedSecretV1':
+      return {
+        category: 'governance',
+        summaryArgs: {
+          ballotMode: 'secret',
+          contestType: 'election',
+          receiptHash: event.payload.receiptHash,
+        },
+        targetId: event.payload.electionId,
+        targetType: 'election',
+        titleKey: 'history.governance.ballot_recorded',
+        visibility: 'member',
+      };
+    case 'GovernanceLifecycleChangedV1':
+      return {
+        category: 'governance',
+        summaryArgs: {
+          aggregateType: event.payload.aggregateType,
+          occurredTick: event.payload.occurredTick,
+          status: event.payload.status,
+        },
+        targetId: event.payload.aggregateId,
+        targetType: event.payload.aggregateType,
+        titleKey: 'history.governance.lifecycle_changed',
+        visibility: 'public',
+      };
+    case 'WorldGovernanceInitializedV1':
+      return {
+        category: 'governance',
+        summaryArgs: {
+          seedPlanHash: event.payload.seedPlanHash,
+          sourceWorldVersionId: event.payload.sourceWorldVersionId,
+        },
+        targetId: event.worldId,
+        targetType: 'world_governance',
+        titleKey: 'history.governance.initialized',
+        visibility: 'public',
+      };
+    case 'GovernanceSeedPlanAdoptedV1':
+      return {
+        category: 'governance',
+        summaryArgs: {
+          adoptionReasonHash: event.payload.adoptionReasonHash,
+          seedPlanHash: event.payload.seedPlanHash,
+        },
+        targetId: event.worldId,
+        targetType: 'world_governance',
+        titleKey: 'history.governance.seed_plan_adopted',
+        visibility: 'public',
+      };
+    case 'GovernanceCandidacyChangedV1':
+      return {
+        category: 'governance',
+        summaryArgs: {
+          electionId: event.payload.electionId,
+          status: event.payload.status,
+        },
+        targetId: event.payload.candidacyId,
+        targetType: 'candidacy',
+        titleKey: 'history.governance.candidacy_changed',
+        visibility: 'public',
+      };
+    case 'GovernanceResultFinalizedV1':
+      return {
+        category: 'governance',
+        summaryArgs: {
+          aggregateType: event.payload.aggregateType,
+          inputChecksum: event.payload.inputChecksum,
+          resultChecksum: event.payload.resultChecksum,
+        },
+        targetId: event.payload.resultId,
+        targetType: `${event.payload.aggregateType}_result`,
+        titleKey: 'history.governance.result_finalized',
+        visibility: 'public',
+      };
+    case 'GovernanceLawVersionActivatedV1':
+      return {
+        category: 'governance',
+        summaryArgs: {
+          effectiveFromTick: event.payload.effectiveFromTick,
+          lawVersion: event.payload.lawVersion,
+        },
+        targetId: event.payload.lawId,
+        targetType: 'law',
+        titleKey: 'history.governance.law_activated',
+        visibility: 'public',
+      };
+    case 'GovernanceOfficeTermChangedV1':
+      return {
+        category: 'governance',
+        summaryArgs: {
+          seatIndex: event.payload.seatIndex,
+          status: event.payload.status,
+        },
+        targetId: event.payload.termId,
+        targetType: 'office_term',
+        titleKey: 'history.governance.term_changed',
+        visibility: 'public',
+      };
+    case 'GovernanceOverrideExecutedV1':
+      return {
+        category: 'governance',
+        summaryArgs: {
+          actorMode: event.payload.actorMode,
+          impactHash: event.payload.impactHash,
+          overrideUsed: true,
+          reasonCode: event.payload.reasonCode,
+        },
+        targetId: event.payload.overrideId,
+        targetType: 'governance_override',
+        titleKey: 'history.governance.override_executed',
+        visibility: 'public',
+      };
+    case 'GovernanceRepairAppendedV1':
+      return {
+        category: 'governance',
+        summaryArgs: {
+          repairKind: event.payload.repairKind,
+          replacementResultChecksum: event.payload.replacementResultChecksum,
+          sourceResultId: event.payload.sourceResultId,
+        },
+        targetId: event.payload.repairId,
+        targetType: 'governance_repair',
+        titleKey: 'history.governance.repair_appended',
+        visibility: 'public',
       };
   }
 }

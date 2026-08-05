@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { API_PROXY_TIMEOUT_MS } from '../../../lib/api';
+import { API_PROXY_TIMEOUT_MS, ARTIFACT_PROXY_TIMEOUT_MS } from '../../../lib/api';
 import { GET, MAX_PROXY_BODY_BYTES, POST } from './route';
 
 const retrievalContext = {
@@ -65,6 +65,7 @@ describe('browser API proxy boundary', () => {
       '/api/v1/primitives?kinds=government&tags=city-state',
     );
     expect(API_PROXY_TIMEOUT_MS).toBeGreaterThan(3_000);
+    expect(ARTIFACT_PROXY_TIMEOUT_MS).toBeGreaterThan(API_PROXY_TIMEOUT_MS);
   });
 
   it('allows bounded manifest studio routes and rejects lookalike paths', async () => {
@@ -91,6 +92,7 @@ describe('browser API proxy boundary', () => {
 
   it('allows only bounded compilation and WorldGraph routes', async () => {
     const upstream = vi.fn(async () => Response.json({ items: [], nextCursor: null }));
+    const timers = vi.spyOn(globalThis, 'setTimeout');
     vi.stubGlobal('fetch', upstream);
     const runId = '018f8652-3cb6-7d52-904b-cce7901d7e31';
     const allowedPaths = [
@@ -112,6 +114,7 @@ describe('browser API proxy boundary', () => {
       expect(response.status, path).toBe(200);
     }
     expect(upstream).toHaveBeenCalledTimes(allowedPaths.length);
+    expect(timers.mock.calls.map((call) => call[1])).toContain(ARTIFACT_PROXY_TIMEOUT_MS);
 
     const recursive = `worlds/${worldId}/entities/district:skyforge/neighbors/recursive`;
     const recursiveResponse = await GET(new Request(`http://localhost/api/v1/${recursive}`), {
@@ -158,6 +161,36 @@ describe('browser API proxy boundary', () => {
     );
     expect(denied.status).toBe(404);
     expect(upstream).toHaveBeenCalledTimes(allowed.length + 1);
+  });
+
+  it('allows isolated reauthentication and forwards a recent proof only as a command header', async () => {
+    const upstream = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) =>
+      Response.json({ ok: true }),
+    );
+    vi.stubGlobal('fetch', upstream);
+    const reauthentication = await POST(
+      new Request('http://localhost/api/v1/auth/reauthenticate', {
+        body: '{"password":"redacted"}',
+        headers: { 'content-type': 'application/json', 'x-csrf-token': 'c'.repeat(43) },
+        method: 'POST',
+      }),
+      { params: Promise.resolve({ path: ['auth', 'reauthenticate'] }) },
+    );
+    expect(reauthentication.status).toBe(200);
+
+    const command = await POST(
+      new Request(`http://localhost/api/v1/worlds/${worldId}/commands`, {
+        body: '{}',
+        headers: { 'x-recent-credential-proof': 'p'.repeat(43) },
+        method: 'POST',
+      }),
+      { params: Promise.resolve({ path: ['worlds', worldId, 'commands'] }) },
+    );
+    expect(command.status).toBe(200);
+    const reauthHeaders = new Headers(upstream.mock.calls[0]?.[1]?.headers);
+    const commandHeaders = new Headers(upstream.mock.calls[1]?.[1]?.headers);
+    expect(reauthHeaders.get('x-recent-credential-proof')).toBeNull();
+    expect(commandHeaders.get('x-recent-credential-proof')).toBe('p'.repeat(43));
   });
 
   it('allows only exact simulation read routes through the browser boundary', async () => {
@@ -339,6 +372,56 @@ describe('browser API proxy boundary', () => {
         new Request(`http://localhost/api/v1/${path}`, { body: '{}', method: 'POST' }),
         { params: Promise.resolve({ path: path.split('/') }) },
       );
+      expect(response.status, path).toBe(404);
+    }
+    expect(upstream).toHaveBeenCalledTimes(allowed.length);
+  });
+
+  it('allows exact governance projections without exposing secret-choice or operator storage', async () => {
+    const upstream = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) =>
+      Response.json({ items: [], page: { nextCursor: null, projectionRevision: '1' } }),
+    );
+    vi.stubGlobal('fetch', upstream);
+    const contestId = '018f8652-3cb6-7d52-904b-cce7901d7e27';
+    const officeId = '018f8652-3cb6-7d52-904b-cce7901d7e28';
+    const allowed = [
+      `worlds/${worldId}/governance/charter`,
+      `worlds/${worldId}/governance/capabilities`,
+      `worlds/${worldId}/governance/institutions`,
+      `worlds/${worldId}/governance/laws`,
+      `worlds/${worldId}/governance/offices`,
+      `worlds/${worldId}/governance/terms`,
+      `worlds/${worldId}/governance/proposals`,
+      `worlds/${worldId}/governance/proposals/${contestId}`,
+      `worlds/${worldId}/governance/proposals/${contestId}/receipt`,
+      `worlds/${worldId}/governance/proposals/${contestId}/result`,
+      `worlds/${worldId}/governance/elections`,
+      `worlds/${worldId}/governance/elections/${contestId}`,
+      `worlds/${worldId}/governance/elections/${contestId}/candidates`,
+      `worlds/${worldId}/governance/elections/${contestId}/receipt`,
+      `worlds/${worldId}/governance/elections/${contestId}/result`,
+      `worlds/${worldId}/governance/audit`,
+    ];
+    for (const path of allowed) {
+      const response = await GET(new Request(`http://localhost/api/v1/${path}?limit=25`), {
+        params: Promise.resolve({ path: path.split('/') }),
+      });
+      expect(response.status, path).toBe(200);
+    }
+    expect(upstream).toHaveBeenCalledTimes(allowed.length);
+
+    for (const path of [
+      `worlds/${worldId}/governance/secret-ballot-choices`,
+      `worlds/${worldId}/governance/proposals/${contestId}/ballots`,
+      `worlds/${worldId}/governance/elections/${contestId}/voter-choice-linkage`,
+      `worlds/${worldId}/governance/repairs`,
+      `worlds/${worldId}/governance/overrides`,
+      `worlds/${worldId}/governance/export`,
+      `worlds/${worldId}/governance/offices/${officeId}/terms`,
+    ]) {
+      const response = await GET(new Request(`http://localhost/api/v1/${path}`), {
+        params: Promise.resolve({ path: path.split('/') }),
+      });
       expect(response.status, path).toBe(404);
     }
     expect(upstream).toHaveBeenCalledTimes(allowed.length);

@@ -20,6 +20,18 @@ x-app-environment: &app-environment
   COMMERCE_SCHEDULE_ENABLED: ${COMMERCE_SCHEDULE_ENABLED:-true}
   COMMERCE_SCHEDULE_BATCH_SIZE: ${COMMERCE_SCHEDULE_BATCH_SIZE:-25}
   COMMERCE_SCHEDULE_RECONCILIATION_INTERVAL_MS: ${COMMERCE_SCHEDULE_RECONCILIATION_INTERVAL_MS:-1000}
+  GOVERNANCE_SCHEDULE_ENABLED: ${GOVERNANCE_SCHEDULE_ENABLED:-true}
+  GOVERNANCE_SCHEDULE_BATCH_SIZE: ${GOVERNANCE_SCHEDULE_BATCH_SIZE:-25}
+  GOVERNANCE_SCHEDULE_RECONCILIATION_INTERVAL_MS: ${GOVERNANCE_SCHEDULE_RECONCILIATION_INTERVAL_MS:-1000}
+  GOVERNANCE_CONTESTS_ENABLED: ${GOVERNANCE_CONTESTS_ENABLED:-true}
+  GOVERNANCE_VOTING_ENABLED: ${GOVERNANCE_VOTING_ENABLED:-true}
+  GOVERNANCE_ENACTMENT_ENABLED: ${GOVERNANCE_ENACTMENT_ENABLED:-true}
+  GOVERNANCE_OVERRIDES_ENABLED: ${GOVERNANCE_OVERRIDES_ENABLED:-true}
+  GOVERNANCE_TWO_PERSON_CONTROL_ENABLED: ${GOVERNANCE_TWO_PERSON_CONTROL_ENABLED:-false}
+  GOVERNANCE_CONTEST_RATE_LIMIT_PER_HOUR: ${GOVERNANCE_CONTEST_RATE_LIMIT_PER_HOUR:-6}
+  GOVERNANCE_SPONSOR_RATE_LIMIT_PER_MINUTE: ${GOVERNANCE_SPONSOR_RATE_LIMIT_PER_MINUTE:-20}
+  GOVERNANCE_VOTE_RATE_LIMIT_PER_MINUTE: ${GOVERNANCE_VOTE_RATE_LIMIT_PER_MINUTE:-30}
+  GOVERNANCE_NOMINATION_RATE_LIMIT_PER_MINUTE: ${GOVERNANCE_NOMINATION_RATE_LIMIT_PER_MINUTE:-10}
   PRIMITIVE_INDEX_RECONCILIATION_INTERVAL_MS: ${PRIMITIVE_INDEX_RECONCILIATION_INTERVAL_MS:-5000}
   MANIFEST_GENERATION_ENABLED: ${MANIFEST_GENERATION_ENABLED:-true}
   MANIFEST_GENERATION_PROVIDER: ${MANIFEST_GENERATION_PROVIDER:-disabled}
@@ -71,6 +83,7 @@ x-app-environment: &app-environment
 
 services:
   postgres:
+    platform: ${POSTGRES_PLATFORM:-linux/amd64}
     build:
       context: ./docker/postgres
     environment:
@@ -88,7 +101,7 @@ services:
       - postgres-data:/var/lib/postgresql/data
 
   redis:
-    image: redis:8.4.0-alpine
+    image: redis:8.4.5-alpine3.22
     command: [redis-server, --save, '', --appendonly, 'no']
     healthcheck:
       test: [CMD, redis-cli, ping]
@@ -101,7 +114,8 @@ services:
   migrate:
     build:
       context: .
-    command: [node, node_modules/tsx/dist/cli.mjs, packages/db/src/cli/bootstrap.ts]
+      target: migration
+    command: [node, dist/cli/bootstrap.js]
     depends_on:
       postgres:
         condition: service_healthy
@@ -112,7 +126,8 @@ services:
   api:
     build:
       context: .
-    command: [node, apps/api/dist/index.js]
+      target: api
+    command: [node, dist/index.js]
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -140,7 +155,8 @@ services:
   worker:
     build:
       context: .
-    command: [node, apps/worker/dist/index.js]
+      target: worker
+    command: [node, dist/index.js]
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -148,6 +164,7 @@ services:
         condition: service_healthy
     environment:
       <<: *app-environment
+      GOVERNANCE_TALLY_DATABASE_URL: postgres://worldgraph_governance_tally:worldgraph_governance_tally_local_only@postgres:5432/worldgraph
       WORKER_HEALTH_HOST: 0.0.0.0
       WORKER_HEALTH_PORT: 4001
     healthcheck:
@@ -165,7 +182,8 @@ services:
   web:
     build:
       context: .
-    command: [node, node_modules/next/dist/bin/next, start, --hostname, 0.0.0.0, --port, '3000']
+      target: web
+    command: [node, server.js]
     depends_on:
       api:
         condition: service_healthy

@@ -3,8 +3,8 @@ import { resolve } from 'node:path';
 import { PostgreSqlContainer } from '@testcontainers/postgresql';
 import type { RuntimeConfig } from '@worldgraph/config';
 import {
-  PREVIOUS_COMPILED_ARTIFACT_SCHEMA_VERSION,
-  PREVIOUS_COMPILER_VERSION,
+  RETAINED_COMPILED_ARTIFACT_SCHEMA_VERSION,
+  RETAINED_COMPILER_VERSION,
   SystemClock,
   UuidV7Generator,
   type ApplicationNotification,
@@ -156,6 +156,7 @@ describe.sequential('compiler and runtime API security boundary', () => {
     appUrl.username = 'worldgraph_app';
     appUrl.password = 'worldgraph_app_local_only';
     appClient = createDatabaseClient(appUrl.toString(), 'compiler-runtime-api-app-role-test');
+    appClient.pool.options.connectionTimeoutMillis = 60_000;
 
     const config = runtimeConfig();
     const clock = new SystemClock();
@@ -1161,10 +1162,10 @@ describe.sequential('compiler and runtime API security boundary', () => {
     expect(artifactResponse.statusCode, artifactResponse.body).toBe(200);
     const artifact = artifactResponse.json<CompiledArtifactV2>();
     expect(artifact).toMatchObject({
-      artifactSchemaVersion: PREVIOUS_COMPILED_ARTIFACT_SCHEMA_VERSION,
+      artifactSchemaVersion: RETAINED_COMPILED_ARTIFACT_SCHEMA_VERSION,
       world: {
-        artifactSchemaVersion: PREVIOUS_COMPILED_ARTIFACT_SCHEMA_VERSION,
-        compilerVersion: PREVIOUS_COMPILER_VERSION,
+        artifactSchemaVersion: RETAINED_COMPILED_ARTIFACT_SCHEMA_VERSION,
+        compilerVersion: RETAINED_COMPILER_VERSION,
         economySeedPlan: { economySeedPlanSchemaVersion: 1 },
       },
     });

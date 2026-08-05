@@ -7,6 +7,7 @@ import {
   EmitWorldNoticePayloadV1Schema,
   InitializeWorldSimulationCommandV1Schema,
   ResolveSimulationFailureCommandV1Schema,
+  ScheduledActionV1Schema,
   SimulationCommandRequestV1Schema,
   SimulationEventV1Schema,
   SimulationOutcomeV1Schema,
@@ -38,10 +39,10 @@ const uuid = '018f8652-3cb6-7d52-904b-cce7901d7e25';
 const hash = 'a'.repeat(64);
 
 describe('simulation contracts', () => {
-  it('publishes M9 aggregate, compiler, and process-registry compatibility', () => {
-    expect(CONTRACT_SCHEMA_VERSION).toBe(9);
-    expect(RUNTIME_SCHEMA_VERSION).toBe(9);
-    expect(COMPILER_VERSION).toBe('1.2.0');
+  it('publishes M10 aggregate, compiler, and process-registry compatibility', () => {
+    expect(CONTRACT_SCHEMA_VERSION).toBe(10);
+    expect(RUNTIME_SCHEMA_VERSION).toBe(10);
+    expect(COMPILER_VERSION).toBe('1.3.0');
     expect({
       batch: SIMULATION_BATCH_SCHEMA_VERSION,
       clock: SIMULATION_CLOCK_SCHEMA_VERSION,
@@ -60,7 +61,7 @@ describe('simulation contracts', () => {
       outcome: 1,
       prng: 1,
       process: 1,
-      processRegistry: 2,
+      processRegistry: 3,
       projection: 1,
       queue: 1,
       schedule: 1,
@@ -69,7 +70,7 @@ describe('simulation contracts', () => {
       simulationPrngAlgorithm: SIMULATION_PRNG_ALGORITHM_VERSION,
       simulationPrngSchema: 1,
       simulationProcessSchema: 1,
-      simulationProcessRegistry: 2,
+      simulationProcessRegistry: 3,
     });
   });
 
@@ -191,6 +192,36 @@ describe('simulation contracts', () => {
     const wakeValidator = createValidator(SimulationWakeMessageV1Schema);
     expect(wakeValidator.is(wake)).toBe(true);
     expect(wakeValidator.is({ ...wake, actorId: uuid })).toBe(false);
+  });
+
+  it('strictly validates target-only governance scheduler payloads', () => {
+    const scheduled = {
+      actionSchemaVersion: 1,
+      actionType: 'OpenProposalVotingV1',
+      cancelledCommandId: null,
+      completedEventId: null,
+      completedStateRevision: null,
+      createdAt: '2026-07-22T00:00:00.000Z',
+      createdBy: { actorId: 'governance.scheduler.v1', actorType: 'system' },
+      createdCommandId: uuid,
+      createdStateRevision: '1',
+      dueTick: '42',
+      id: uuid,
+      payload: { proposalId: uuid },
+      payloadHash: hash,
+      priority: 0,
+      processVersion: '1.0.0',
+      scheduleSchemaVersion: 1,
+      scheduleSequence: '1',
+      status: 'scheduled',
+      updatedAt: '2026-07-22T00:00:00.000Z',
+      worldId: uuid,
+    };
+    const validator = createValidator(ScheduledActionV1Schema);
+    expect(validator.is(scheduled)).toBe(true);
+    expect(validator.is({ ...scheduled, payload: { choice: 'yes', proposalId: uuid } })).toBe(
+      false,
+    );
   });
 
   it('registers initialization and notice variants in both simulation and authoritative unions', () => {

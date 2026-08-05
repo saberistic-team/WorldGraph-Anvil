@@ -2,7 +2,7 @@
 
 WorldGraph is a TypeScript modular monolith with three deployable process roles. The Next.js web process renders replaceable views and calls only public API contracts. The Fastify API is the authoritative command/query boundary. The BullMQ worker performs retryable background work from durable identifiers. PostgreSQL is the only durable authority; Redis coordinates queue wakes, heartbeat, and future presence and may be rebuilt.
 
-Dependency direction is transport adapter → application use case → framework-independent domain rule → declared repository/port. Identity, worlds, authority, primitives, manifests, generation, compilation, and authoritative-command orchestration are modules inside the API/worker composition roots. `packages/catalog` owns inert primitive validation and deterministic retrieval. `packages/manifests` owns pure Manifest v1 canonicalization, safe-YAML projection, layered validation, structural diffing, deterministic fallback generation, and the schema-constrained provider port. `packages/compiler` owns the pure deterministic resolve/validate/normalize/lower/link/emit pipeline, stable logical keys, seeded PRNG, allowlisted adapters, canonical artifact emission, and verification. `packages/ledger` owns pure versioned command/event registries, decisions/reducers/upcasters, canonical event/ledger hashes, redacted history templates, verification, export, and deterministic projection replay. `packages/simulation` owns checked integer time, deterministic clock/schedule rules, process registry, PRNG streams, budgets, and semantic outcomes without infrastructure capability. `packages/simulation-command` is the shared PostgreSQL simulation system-command executor. `packages/economy` owns pure fixed-point accounting, title, resource, production, employment, market, tax, lock-order, and reconciliation rules. `packages/economy-command` is the shared PostgreSQL economy system-command executor. Public API mutations still cross the authenticated command boundary. `packages/contracts` remains framework-free runtime schema/type data. `packages/db` owns Drizzle parity, connection helpers, forward migrations, bootstrap/import, and the migration journal. Configuration and observability remain separate packages.
+Dependency direction is transport adapter → application use case → framework-independent domain rule → declared repository/port. Identity, worlds, authority, primitives, manifests, generation, compilation, and authoritative-command orchestration are modules inside the API/worker composition roots. `packages/catalog` owns inert primitive validation and deterministic retrieval. `packages/manifests` owns pure Manifest v1 canonicalization, safe-YAML projection, layered validation, structural diffing, deterministic fallback generation, and the schema-constrained provider port. `packages/compiler` owns the pure deterministic resolve/validate/normalize/lower/link/emit pipeline, stable logical keys, seeded PRNG, allowlisted adapters, canonical artifact emission, and verification. `packages/ledger` owns pure versioned command/event registries, decisions/reducers/upcasters, canonical event/ledger hashes, redacted history templates, verification, export, and deterministic projection replay. `packages/simulation` owns checked integer time, deterministic clock/schedule rules, process registry, PRNG streams, budgets, and semantic outcomes without infrastructure capability. `packages/simulation-command` is the shared PostgreSQL simulation system-command executor. `packages/economy` owns pure fixed-point accounting, title, resource, production, employment, market, tax, lock-order, and reconciliation rules. `packages/economy-command` is the shared PostgreSQL economy system-command executor. `packages/governance` owns pure policy, window, tally, term, seed-plan, and deterministic checksum rules. `packages/governance-command` owns the shared PostgreSQL governance command executor and typed enactment boundary. Public API mutations still cross the authenticated command boundary. `packages/contracts` remains framework-free runtime schema/type data. `packages/db` owns Drizzle parity, connection helpers, forward migrations, bootstrap/import, and the migration journal. Configuration and observability remain separate packages.
 
 ## Manifest authority boundary
 
@@ -20,7 +20,7 @@ Initial activation is one serializable transaction under a world advisory lock. 
 
 Protected mutations remain authenticated, exact-Origin/CSRF-protected, authorized, runtime-validated, version-aware, idempotent, and audited. Manifest reads require active world membership. Creators and world administrators may generate, cancel, edit, and validate; only the creator may approve. Platform administration does not synthesize membership and does not expose a private prompt or manifest.
 
-API and worker artifacts explicitly bundle runtime logic. The standalone compiler binary bundles its complete required runtime closure so plain Node can run offline compile/verification commands without following workspace TypeScript exports. The current unified runtime image copies built artifacts, the workspace dependency tree, migrations, and the bounded database/catalog/complete contract/manifest source closure needed by bootstrap and execution. Docker excludes repository docs, source tests, reports, generated local build caches, environment files, source-control metadata, and key material. The root dependency copy still includes development tooling because bootstrap runs through `tsx`; service-specific pruned dependencies and a compiled bootstrap remain image-hardening work. PostgreSQL application grants are narrow, and triggers protect prompt erasure, frozen retrieval, immutable revisions/reports/provenance, generation state transitions, and approved-pointer consistency.
+API and worker artifacts explicitly bundle runtime logic. The standalone compiler binary bundles its complete required runtime closure so plain Node can run offline compile/verification commands without following workspace TypeScript exports. Docker builds separate API, worker, web, and migration targets: API/worker carry their bundled output and service-specific production dependency closures, web uses Next.js standalone output, and migration executes compiled JavaScript with reviewed Drizzle/catalog assets. Runtime images exclude workspace source/tests, repository docs, reports, local build caches, environment files, source-control metadata, key material, and the root TypeScript/`tsx`/Turbo/pnpm toolchain. PostgreSQL application grants are narrow, and triggers protect prompt erasure, frozen retrieval, immutable revisions/reports/provenance, generation state transitions, and approved-pointer consistency.
 
 ## Active-world command and ledger boundary
 
@@ -34,7 +34,7 @@ Replay reads immutable genesis/artifact/event bytes through pure upcasters and r
 
 Every active world has one integer-tick clock and schedule head. Upgrade and fresh activation explicitly record a tick-zero paused initialization command/event. World time is checked integer arithmetic from the immutable epoch; wall time only lets a worker propose a bounded target. Public configure/start/pause/advance/schedule/cancel operations use the authenticated M06 command boundary. A continuous worker uses a fixed system principal and a shared executor that validates an expiring PostgreSQL owner/fencing epoch inside the same serializable transaction as the accepted advance. Redis/BullMQ only wakes periodic PostgreSQL reconciliation.
 
-The code-owned process registry v2 supports `EmitWorldNoticeV1` plus the four target-only commerce actions `CompleteProductionRunV1`, `SettlePayrollV1`, `ExpireMarketListingV1`, and `AssessPeriodicTaxV1`; registry v1 remains the exact notice-only compatibility lane. Pure handlers receive validated snapshots, derived world time, a keyed deterministic PRNG, and semantic checksum; they return typed proposed facts/schedules and cannot access infrastructure, AI, wall time, ambient random, or dynamic code. Due order is tick, priority, schedule sequence, then stable ID. One advance summary and its due facts commit with one state revision, terminal schedules, batch evidence, checkpoints, ledger, and outbox. Bounded deterministic failure rolls back and later records a separate fenced auto-pause/failure command rather than skipping work.
+The code-owned process registry v3 supports `EmitWorldNoticeV1`, the four target-only commerce actions `CompleteProductionRunV1`, `SettlePayrollV1`, `ExpireMarketListingV1`, and `AssessPeriodicTaxV1`, and six target-only governance actions for proposal/election open, close/tally, and certification; registry v2/v1 remain exact compatibility lanes. Pure simulation handlers receive validated snapshots, derived world time, a keyed deterministic PRNG, and semantic checksum; they return typed proposed facts/schedules and cannot access infrastructure, AI, wall time, ambient random, or dynamic code. Governance lifecycle effects run afterward through their fixed system command and completed-schedule proof. Due order is tick, priority, schedule sequence, then stable ID. One advance summary and its due facts commit with one state revision, terminal schedules, batch evidence, checkpoints, ledger, and outbox. Bounded deterministic failure rolls back and later records a separate fenced auto-pause/failure command rather than skipping work.
 
 M06 graph and M07 simulation checkpoints are deliberately separate. The graph checksum retains its state-revision invariant. The simulation checksum excludes revisions, wall/worker/lease/batch/failure metadata, generated IDs, and timestamps so different wake and batch grouping can converge semantically. See ADR 0012 and `simulation.md`.
 
@@ -56,30 +56,41 @@ Commerce shares the world advisory/runtime/core-economy locks and adds a separat
 
 Membership and live controller/organization affiliation determine business and participant authority before pagination. Target-scoped rate identities are persisted with command evidence, and economy command traces hash private references before export. During durable outbox dispatch the worker derives schema-1 commerce invalidations from committed facts, validates their ID/revision/cursor-only shape, and publishes to deterministic internal world-scoped Redis channels. Redis publication cannot change authoritative state; failure retries the outbox, duplicates are safe, and a future client gateway must authorize each subscription before relaying and refetching. A dead message can be requeued only by the owner-grade, active-platform-administrator workflow, which appends a private retry intent while preserving the original message/event identity and attempt count; application roles have neither table nor function authority. Runtime AI, real-money value, cash-out, external payment, exchange, credit, escrow, auctions, and order books remain outside the boundary. See ADR 0014, `commerce-schema.md`, and `economy.md`.
 
+## Governance authority boundary
+
+Compiler `1.3.0`/artifact 4 adds one canonical governance seed plan without changing retained artifact bytes. Explicit initialization materializes a charter, institutions/powers, initial immutable laws, seat-specific regular elections, and their schedules; migration does not create governance for an existing world. `@worldgraph/governance` evaluates only finite schema-1 policy data and pure deterministic contest/tally/term rules. Natural language and AI never authorize, count, certify, or enact.
+
+Ordinary civic commands resolve a current controlled character, membership roles, held offices, active law/charter/office sources, resource, action, and world tick. PostgreSQL records the exact allow/deny decision and source checksums. Creator provenance is not a universal role. A creator/administrator bypass uses only the dedicated reasoned override command, optional exact second approval, and a visibly distinct override event/ledger entry.
+
+Proposal/election windows are half-open world ticks. Opening freezes eligibility. Public ballot disclosure is charter-bound; secret choice revisions are separated from participation/receipts and readable only through the narrow tally role. The application role, APIs, history, events, outbox, SSE, browser, and ordinary telemetry never receive voter-choice linkage. This protects the application boundary but trusts the database owner, tally service, key store, and backups.
+
+Certification appends immutable results. Election certification ends prior seat authority and starts the declared winning term at one exact tick. Proposal certification dispatches only typed law, bounded-tax, project-encumbrance, appointment, or patch-approval effects and rechecks every current target/economy invariant. Effects commit with the result/event/ledger/outbox set or roll back before a failed-enactment state is recorded. Corrections append checksum-linked repair/recount/compensation evidence; they do not update certified facts. See ADR 0015 and `governance-schema.md`.
+
 ## Compatibility state
 
-| Axis                                                   | Current value                       |
-| ------------------------------------------------------ | ----------------------------------- |
-| Public API                                             | `v1`                                |
-| Contract/runtime schema                                | `9` / `9`                           |
-| Manifest/generator/prompt/validator/wake               | `1`                                 |
-| Manifest `worldgraph.economy` extension                | `2`                                 |
-| Primitive schema/index policy                          | `1`                                 |
-| Command/event/ledger/projection/outbox/history         | `1`                                 |
-| Application and commerce notification schemas          | `1`                                 |
-| Compiler                                               | `1.2.0` (`1.1.0`, `1.0.0` retained) |
-| Compiler config/graph/wake                             | `1`                                 |
-| Compiler artifact                                      | `3` (`2`, `1` retained)             |
-| Simulation clock/schedule/action/process               | `1`                                 |
-| Simulation batch/failure/queue/projection/outcome/PRNG | `1`                                 |
-| Simulation process registry                            | `2` (`1` retained)                  |
-| Simulation PRNG algorithm                              | `xorshift32-sha256-v1`              |
-| Economy seed plan                                      | `2` (`1` retained)                  |
-| Economy/currency/wallet/financial transaction          | `1`                                 |
-| Asset/ownership/offer                                  | `1`                                 |
-| Economy reconciliation                                 | `2` (`1` retained)                  |
-| Resource/recipe/inventory                              | `1`                                 |
-| Business/facility/employment/production                | `1`                                 |
-| Market/trade/tax/commerce expansion                    | `1`                                 |
+| Axis                                                   | Current value                                |
+| ------------------------------------------------------ | -------------------------------------------- |
+| Public API                                             | `v1`                                         |
+| Contract/runtime schema                                | `10` / `10`                                  |
+| Manifest/generator/prompt/validator/wake               | `1`                                          |
+| Manifest `worldgraph.economy` extension                | `2`                                          |
+| Primitive schema/index policy                          | `1`                                          |
+| Command/event/ledger/projection/outbox/history         | `1`                                          |
+| Application, commerce, governance notification schemas | `1`                                          |
+| Compiler                                               | `1.3.0` (`1.2.0`, `1.1.0`, `1.0.0` retained) |
+| Compiler config/graph/wake                             | `1`                                          |
+| Compiler artifact                                      | `4` (`3`, `2`, `1` retained)                 |
+| Simulation clock/schedule/action/process               | `1`                                          |
+| Simulation batch/failure/queue/projection/outcome/PRNG | `1`                                          |
+| Simulation process registry                            | `3` (`2`, `1` retained)                      |
+| Simulation PRNG algorithm                              | `xorshift32-sha256-v1`                       |
+| Economy seed plan                                      | `2` (`1` retained)                           |
+| Economy/currency/wallet/financial transaction          | `1`                                          |
+| Asset/ownership/offer                                  | `1`                                          |
+| Economy reconciliation                                 | `2` (`1` retained)                           |
+| Resource/recipe/inventory                              | `1`                                          |
+| Business/facility/employment/production                | `1`                                          |
+| Market/trade/tax/commerce expansion                    | `1`                                          |
+| Governance seed/schema/policy/tally                    | `1`                                          |
 
-Graph access remains relational in PostgreSQL. A graph database, microservices, live model provider, Manifest v2, real-money path, or a new runtime mutation domain requires measured evidence and a separately reviewed version/ADR. See ADRs 0007–0014.
+Graph access remains relational in PostgreSQL. A graph database, microservices, live model provider, Manifest v2, real-money path, or a new runtime mutation domain requires measured evidence and a separately reviewed version/ADR. See ADRs 0007–0015.

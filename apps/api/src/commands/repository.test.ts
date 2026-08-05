@@ -133,6 +133,39 @@ describe('PostgresCommandRepository transaction retry policy', () => {
 });
 
 describe('PostgresCommandRepository command rate scope persistence', () => {
+  it('omits the M09 rate-scope column for commands compatible with an exact M08 database', async () => {
+    const query = vi.fn().mockResolvedValue(result([]));
+    const repository = new PostgresCommandRepository(
+      {} as Pool,
+      { next: () => worldId },
+      { query },
+    );
+    const command = economyCommand();
+
+    await repository.insertReceived(command);
+
+    expect(query).toHaveBeenCalledOnce();
+    expect(query.mock.calls[0]?.[0]).not.toContain('rate_limit_scope_hash');
+    expect(query.mock.calls[0]?.[1]).toEqual([
+      command.commandId,
+      command.worldId,
+      command.commandType,
+      command.schemaVersion,
+      command.actorType,
+      command.actorId,
+      command.payloadHash,
+      command.payloadClassification,
+      command.idempotencyKey,
+      command.requestHash,
+      command.expectedWorldVersion,
+      command.expectedStateRevision,
+      command.expectedAggregateVersion,
+      command.correlationId,
+      command.causationId,
+      command.requestedAt,
+    ]);
+  });
+
   it('writes the server-derived target hash without persisting the private payload', async () => {
     const query = vi.fn().mockResolvedValue(result([]));
     const repository = new PostgresCommandRepository(

@@ -54,11 +54,13 @@ export async function mutateJson<T>(
   method: 'DELETE' | 'PATCH' | 'POST' | 'PUT',
   body: object = {},
   idempotencyKey = crypto.randomUUID(),
+  additionalHeaders: Record<string, string> = {},
 ): Promise<T> {
   const csrf = await ensureCsrf();
   return requestJson<T>(path, {
     body: JSON.stringify(body),
     headers: {
+      ...additionalHeaders,
       'content-type': 'application/json',
       'idempotency-key': idempotencyKey,
       'x-csrf-token': csrf,

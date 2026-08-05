@@ -6,6 +6,7 @@ import Redis from 'ioredis';
 import type { RuntimeConfig } from '@worldgraph/config';
 import {
   SystemClock,
+  SIMULATION_PROCESS_REGISTRY_VERSION,
   UuidV7Generator,
   type ApplicationNotification,
   type DomainEventEnvelopeV1,
@@ -176,7 +177,7 @@ describe.sequential('M07 manual simulation commands with real PostgreSQL', () =>
       .withUsername('worldgraph_owner')
       .withPassword('worldgraph_owner_local_only')
       .start();
-    redisContainer = await new RedisContainer('redis:8.4.0-alpine').start();
+    redisContainer = await new RedisContainer('redis:8.4.5-alpine3.22').start();
     redis = new Redis(redisContainer.getConnectionUrl(), {
       lazyConnect: true,
       maxRetriesPerRequest: null,
@@ -1160,8 +1161,14 @@ describe.sequential('M07 manual simulation commands with real PostgreSQL', () =>
         client.pool.query(
           `select count(*)::text count from simulation_batch_runs
             where world_id=$1 and from_tick=$2::bigint and to_tick=$3::bigint
-              and input_checksum=decode($4,'hex') and process_registry_version=1`,
-          [worldA.worldId, paused.clock.currentTick, dueTick, originalBatch.input_checksum],
+              and input_checksum=decode($4,'hex') and process_registry_version=$5`,
+          [
+            worldA.worldId,
+            paused.clock.currentTick,
+            dueTick,
+            originalBatch.input_checksum,
+            SIMULATION_PROCESS_REGISTRY_VERSION,
+          ],
         ),
       ).resolves.toMatchObject({ rows: [{ count: '1' }] });
 

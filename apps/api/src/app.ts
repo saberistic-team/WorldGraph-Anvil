@@ -80,6 +80,7 @@ export async function buildApp(dependencies: AppDependencies) {
   const ajv = new Ajv2020({
     allErrors: true,
     coerceTypes: false,
+    discriminator: true,
     removeAdditional: false,
     strict: true,
   });

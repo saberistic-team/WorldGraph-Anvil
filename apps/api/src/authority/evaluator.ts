@@ -77,6 +77,16 @@ const commerceControllerActions = new Set<AuthorityAction>([
   'commerce.market.cancel',
   'commerce.market.purchase',
 ]);
+const governanceCivicActions = new Set<AuthorityAction>([
+  'governance.proposal.create',
+  'governance.proposal.sponsor',
+  'governance.proposal.withdraw',
+  'governance.ballot.cast',
+  'governance.candidate.nominate',
+  'governance.candidate.accept',
+  'governance.office.appoint',
+  'governance.office.remove',
+]);
 
 export function evaluateAuthority(
   subject: AuthoritySubject,
@@ -115,6 +125,62 @@ export function evaluateAuthority(
     return subject.membershipRole === 'creator' || subject.membershipRole === 'administrator'
       ? allow('simulation.world_role.schedule')
       : deny('simulation.administrator_required', 'ACTION_NOT_PERMITTED');
+  }
+  // Governance commands receive a second, transaction-scoped decision from the
+  // compiled charter/law/office policy engine. This coarse boundary only proves
+  // membership and keeps creator/platform administration distinct from ordinary
+  // civic authority; it never treats the legacy futureOfficeRoles placeholder as
+  // an authorization source.
+  if (
+    action === 'governance.read' ||
+    action === 'governance.initialize' ||
+    governanceCivicActions.has(action) ||
+    action === 'governance.override.execute' ||
+    action === 'governance.result.repair'
+  ) {
+    if (action === 'governance.override.execute' || action === 'governance.result.repair') {
+      const operator =
+        subject.platformRole === 'platform_admin' ||
+        (subject.membershipStatus === 'active' && subject.membershipRole === 'creator');
+      if (!operator) {
+        return deny(
+          action === 'governance.override.execute'
+            ? 'governance.override_operator_required'
+            : 'governance.repair_operator_required',
+          subject.membershipStatus === 'active' && subject.membershipRole
+            ? 'CREATOR_REQUIRED'
+            : 'WORLD_NOT_VISIBLE',
+        );
+      }
+      if (!context.overrideRequested) {
+        return deny(
+          action === 'governance.override.execute'
+            ? 'governance.override_explicit_confirmation_required'
+            : 'governance.repair_explicit_confirmation_required',
+          'OVERRIDE_NOT_EXPLICIT',
+        );
+      }
+      return allow(
+        subject.platformRole === 'platform_admin'
+          ? `governance.platform_administrator_explicit_${action.endsWith('repair') ? 'repair' : 'override'}`
+          : `governance.creator_explicit_${action.endsWith('repair') ? 'repair' : 'override'}`,
+      );
+    }
+    if (action === 'governance.initialize' && subject.platformRole === 'platform_admin') {
+      return allow('governance.platform_administrator_initialize');
+    }
+    if (subject.membershipStatus !== 'active' || !subject.membershipRole) {
+      return deny('governance.membership_required', 'WORLD_NOT_VISIBLE');
+    }
+    if (action === 'governance.read') return allow('governance.membership_read');
+    if (action === 'governance.initialize') {
+      return subject.membershipRole === 'creator'
+        ? allow('governance.creator_initialize')
+        : deny('governance.creator_initialize_required', 'CREATOR_REQUIRED');
+    }
+    return subject.membershipRole === 'observer'
+      ? deny('governance.playable_membership_required', 'ACTION_NOT_PERMITTED')
+      : allow('governance.compiled_policy_recheck_required');
   }
   // Economy authority never inherits the platform-admin bypass. Private wallet
   // and title authority is established from a current entity-controller row in

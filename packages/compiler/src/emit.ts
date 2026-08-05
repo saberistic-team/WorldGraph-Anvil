@@ -2,34 +2,41 @@ import {
   COMPILED_ARTIFACT_SCHEMA_VERSION,
   COMPILER_CONFIG_SCHEMA_VERSION,
   COMPILER_VERSION,
-  CompiledArtifactV3Schema,
+  CompiledArtifactV4Schema,
   MANIFEST_SCHEMA_VERSION,
   WORLD_GRAPH_SCHEMA_VERSION,
   WorldEntityStatePairV1Validator,
   WorldRelationshipAttributesPairV1Validator,
   canonicalJson,
   createValidator,
-  type CompiledArtifactV3,
-  type CompiledWorldV3,
+  type CompiledArtifactV4,
+  type CompiledWorldV4,
   type CompilerDiagnosticV1,
 } from '@worldgraph/contracts';
 
 import { compilerDiagnostic, sortCompilerDiagnostics } from './diagnostics.js';
 import { deriveLoweredEconomySeedPlanV2 } from './economy-seed.js';
+import { deriveLoweredGovernanceSeedPlanV1 } from './governance-seed.js';
 import { compiledArtifactHash } from './hash.js';
 import { validateCompiledWorldSemantics } from './invariants.js';
 import type { LoweredWorld, StageResult } from './types.js';
 
-const artifactValidator = createValidator<CompiledArtifactV3>(CompiledArtifactV3Schema);
+const artifactValidator = createValidator<CompiledArtifactV4>(CompiledArtifactV4Schema);
 
 function compareText(left: string, right: string): number {
   return left < right ? -1 : left > right ? 1 : 0;
 }
 
-export function emitCompiledArtifact(lowered: LoweredWorld): StageResult<CompiledArtifactV3> {
-  const seedPlan = deriveLoweredEconomySeedPlanV2(lowered);
-  if (!seedPlan.value) return { diagnostics: seedPlan.diagnostics, value: null };
-  const world: CompiledWorldV3 = {
+export function emitCompiledArtifact(lowered: LoweredWorld): StageResult<CompiledArtifactV4> {
+  const economySeedPlan = deriveLoweredEconomySeedPlanV2(lowered);
+  if (!economySeedPlan.value) {
+    return { diagnostics: economySeedPlan.diagnostics, value: null };
+  }
+  const governanceSeedPlan = deriveLoweredGovernanceSeedPlanV1(lowered);
+  if (!governanceSeedPlan.value) {
+    return { diagnostics: governanceSeedPlan.diagnostics, value: null };
+  }
+  const world: CompiledWorldV4 = {
     artifactSchemaVersion: COMPILED_ARTIFACT_SCHEMA_VERSION,
     compilerConfigVersion: COMPILER_CONFIG_SCHEMA_VERSION,
     compilerVersion: COMPILER_VERSION,
@@ -44,8 +51,10 @@ export function emitCompiledArtifact(lowered: LoweredWorld): StageResult<Compile
     entities: [...lowered.entities].sort((left, right) =>
       compareText(left.logicalKey, right.logicalKey),
     ),
-    economySeedPlan: seedPlan.value.plan,
-    economySeedPlanHash: seedPlan.value.hash,
+    economySeedPlan: economySeedPlan.value.plan,
+    economySeedPlanHash: economySeedPlan.value.hash,
+    governanceSeedPlan: governanceSeedPlan.value.plan,
+    governanceSeedPlanHash: governanceSeedPlan.value.hash,
     inputHash: lowered.normalized.bundle.inputHash,
     manifestContentHash: lowered.normalized.bundle.manifestContentHash,
     manifestSchemaVersion: MANIFEST_SCHEMA_VERSION,
@@ -62,7 +71,7 @@ export function emitCompiledArtifact(lowered: LoweredWorld): StageResult<Compile
     return { diagnostics: semanticDiagnostics, value: null };
   }
   const canonicalBytes = canonicalJson(world);
-  const artifact: CompiledArtifactV3 = {
+  const artifact: CompiledArtifactV4 = {
     artifactKind: 'compiled_world',
     artifactSchemaVersion: COMPILED_ARTIFACT_SCHEMA_VERSION,
     canonicalBytes,

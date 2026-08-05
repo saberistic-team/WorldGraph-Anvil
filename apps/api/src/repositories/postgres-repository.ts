@@ -48,6 +48,21 @@ export interface SessionWrite {
   userId: string;
 }
 
+export interface RecentCredentialProofWrite {
+  auditRecordId: string;
+  commandId: string;
+  commandRequestHash: Buffer;
+  commandType: 'ExecuteCreatorOverrideV1' | 'RepairGovernanceResultV1';
+  expiresAt: Date;
+  id: string;
+  proofHash: Buffer;
+  requestId: string;
+  sessionId: string;
+  userId: string;
+  verifiedAt: Date;
+  worldId: string;
+}
+
 export interface AuditWrite {
   action: string;
   actorUserId: string | null;
@@ -292,6 +307,47 @@ export class PostgresRepository {
       [sessionId, csrfHash],
     );
     return (result.rowCount ?? 0) === 1;
+  }
+
+  public async issueRecentCredentialProof(input: RecentCredentialProofWrite): Promise<void> {
+    let result: QueryResult<{ proof_id: string }>;
+    try {
+      result = await this.executor.query<{ proof_id: string }>(
+        `select public.worldgraph_issue_recent_credential_proof_v1(
+           $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12
+         )::text as proof_id`,
+        [
+          input.id,
+          input.proofHash,
+          input.sessionId,
+          input.userId,
+          input.worldId,
+          input.commandId,
+          input.commandType,
+          input.commandRequestHash,
+          input.verifiedAt,
+          input.expiresAt,
+          input.requestId,
+          input.auditRecordId,
+        ],
+      );
+    } catch (error) {
+      if (isPostgresError(error, '42501')) {
+        throw new ApplicationError(
+          'RECENT_CREDENTIAL_INVALID',
+          'The recent-credential proof could not be issued.',
+          403,
+        );
+      }
+      throw error;
+    }
+    if (result.rows[0]?.proof_id !== input.id) {
+      throw new ApplicationError(
+        'RECENT_CREDENTIAL_INVALID',
+        'The recent-credential proof could not be issued.',
+        403,
+      );
+    }
   }
 
   public async revokeSession(sessionId: string, reason: string): Promise<void> {

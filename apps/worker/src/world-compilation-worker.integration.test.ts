@@ -1,20 +1,24 @@
 import { resolve } from 'node:path';
 
 import { PostgreSqlContainer } from '@testcontainers/postgresql';
-import { HARBOR_CITY_ECONOMY_PRIMITIVES, STARTER_PRIMITIVES } from '@worldgraph/catalog';
+import {
+  GOVERNANCE_PRIMITIVES,
+  HARBOR_CITY_ECONOMY_PRIMITIVES,
+  STARTER_PRIMITIVES,
+} from '@worldgraph/catalog';
 import { compileWorld, createCompilerInputBundle, memberPrincipalKey } from '@worldgraph/compiler';
 import {
   COMPILED_ARTIFACT_SCHEMA_VERSION,
   COMPILER_VERSION,
   canonicalJson,
-  type CompiledArtifactV3,
+  type CompiledArtifactV4,
   type CompilerDiagnosticV1,
   type CompilerInputBundleV1,
 } from '@worldgraph/contracts';
 import { applyMigrations, createDatabaseClient, importStarterPrimitives } from '@worldgraph/db';
 import {
-  createDeterministicHarborCityFallback,
-  harborCityManifestCatalog,
+  createDeterministicGovernedHarborCityFallback,
+  governedHarborCityManifestCatalog,
 } from '@worldgraph/manifests';
 import { createLogger } from '@worldgraph/observability';
 import type { Pool } from 'pg';
@@ -37,14 +41,14 @@ const passwordHash = '$argon2id$v=19$m=65536,t=3,p=1$test-salt$test-hash-value';
 const creatorId = '068f0000-0000-7000-8000-000000000001';
 const playerId = '068f0000-0000-7000-8000-000000000002';
 const seed = 'worker-integration-seed';
-const fallback = createDeterministicHarborCityFallback({
-  catalog: harborCityManifestCatalog(),
+const fallback = createDeterministicGovernedHarborCityFallback({
+  catalog: governedHarborCityManifestCatalog(),
   prompt:
-    'A harbor city with guild workshops, iron and energy production, paid jobs, a fixed-price market, and public sales tax.',
+    'A governed harbor city with guild workshops, public taxation, civic proposals, and elections.',
   seed,
 });
-const pinnedPrimitiveKeys = new Set(
-  fallback.envelope.manifest.primitiveRefs.map((entry) => entry.key),
+const pinnedPrimitiveVersionIds = new Set(
+  fallback.envelope.manifest.primitiveRefs.map((entry) => entry.primitiveVersionId),
 );
 const worlds = {
   duplicate: {
@@ -193,7 +197,7 @@ class CapturingActivationRepository extends PostgresWorldCompilationRepository {
   public override async activate(
     job: ClaimedWorldCompilation,
     bundle: CompilerInputBundleV1,
-    artifact: CompiledArtifactV3,
+    artifact: CompiledArtifactV4,
     diagnostics: readonly CompilerDiagnosticV1[],
     nextId: () => string,
   ): Promise<WorldActivationResult | null> {
@@ -239,8 +243,8 @@ function exactInput(worldId: string) {
       maxRelationships: 8_000,
     },
     manifest: fallback.envelope.manifest,
-    primitives: [...STARTER_PRIMITIVES, ...HARBOR_CITY_ECONOMY_PRIMITIVES]
-      .filter((primitive) => pinnedPrimitiveKeys.has(primitive.input.key))
+    primitives: [...STARTER_PRIMITIVES, ...HARBOR_CITY_ECONOMY_PRIMITIVES, ...GOVERNANCE_PRIMITIVES]
+      .filter((primitive) => pinnedPrimitiveVersionIds.has(primitive.versionId))
       .map((primitive) => ({
         contentHash: primitive.contentHash,
         definition: primitive.input,
@@ -378,7 +382,9 @@ async function expectNoSeed(
     artifact_count: number;
     controller_count: number;
     diagnostics: CompilerDiagnosticV1[];
+    economy_seed_plan_count: number;
     entity_count: number;
+    governance_seed_plan_count: number;
     head_count: number;
     lifecycle: string;
     relationship_count: number;
@@ -391,6 +397,10 @@ async function expectNoSeed(
               where artifact.compilation_run_id = run.id) as artifact_count,
             (select count(*)::integer from world_versions version
               where version.compilation_run_id = run.id) as version_count,
+            (select count(*)::integer from compiled_economy_seed_plans plan
+              where plan.compilation_run_id = run.id) as economy_seed_plan_count,
+            (select count(*)::integer from compiled_governance_seed_plans plan
+              where plan.world_id = world.id) as governance_seed_plan_count,
             (select count(*)::integer from world_entities entity
               where entity.world_id = world.id) as entity_count,
             (select count(*)::integer from world_relationships relationship
@@ -407,7 +417,9 @@ async function expectNoSeed(
   expect(state.rows[0]).toMatchObject({
     artifact_count: 0,
     controller_count: 0,
+    economy_seed_plan_count: 0,
     entity_count: 0,
+    governance_seed_plan_count: 0,
     head_count: 0,
     lifecycle: expected.lifecycle ?? 'compile_failed',
     relationship_count: 0,
@@ -487,11 +499,12 @@ describe('PostgreSQL-authoritative world compilation worker', () => {
       artifact_count: number;
       controller_count: number;
       controller_edge_count: number;
-      compiled_artifact_has_native_seed_plan: boolean;
+      compiled_artifact_has_native_seed_plans: boolean;
       compiled_artifact_schema_version: number;
+      economy_seed_plan_count: number;
       entity_count: number;
+      governance_seed_plan_count: number;
       lifecycle: string;
-      native_seed_plan_count: number;
       relationship_count: number;
       run_artifact_hash: string;
       run_compiler_version: string;
@@ -510,14 +523,25 @@ describe('PostgreSQL-authoritative world compilation worker', () => {
                 as compiled_artifact_schema_version,
               (select artifact.canonical_content ? 'economySeedPlan'
                         and artifact.canonical_content ? 'economySeedPlanHash'
+                        and artifact.canonical_content ? 'governanceSeedPlan'
+                        and artifact.canonical_content ? 'governanceSeedPlanHash'
                  from compiled_world_artifacts artifact
                 where artifact.compilation_run_id = run.id
                   and artifact.artifact_kind = 'compiled_world')
-                as compiled_artifact_has_native_seed_plan,
+                as compiled_artifact_has_native_seed_plans,
               (select count(*)::integer from compiled_economy_seed_plans plan
                 where plan.compilation_run_id = run.id
                   and plan.source_kind = 'compiler_1_2'
-                  and plan.source_compiler_version = $3) as native_seed_plan_count,
+                  and plan.source_compiler_version = $3
+                  and plan.source_artifact_hash = run.artifact_hash)
+                as economy_seed_plan_count,
+              (select count(*)::integer from compiled_governance_seed_plans plan
+                where plan.world_id = world.id
+                  and plan.world_version_id = version.id
+                  and plan.source_kind = 'compiler_1_3'
+                  and plan.source_compiler_version = $3
+                  and plan.source_artifact_hash = run.artifact_hash)
+                as governance_seed_plan_count,
               (select count(*)::integer from compiled_world_artifacts artifact
                 where artifact.compilation_run_id = run.id) as artifact_count,
               (select count(*)::integer from world_entities entity
@@ -546,12 +570,13 @@ describe('PostgreSQL-authoritative world compilation worker', () => {
     );
     expect(state.rows[0]).toMatchObject({
       artifact_count: 3,
-      compiled_artifact_has_native_seed_plan: true,
+      compiled_artifact_has_native_seed_plans: true,
       compiled_artifact_schema_version: COMPILED_ARTIFACT_SCHEMA_VERSION,
       controller_count: 2,
       controller_edge_count: 2,
+      economy_seed_plan_count: 1,
+      governance_seed_plan_count: 1,
       lifecycle: 'active',
-      native_seed_plan_count: 1,
       stage: 'activated',
       status: 'succeeded',
     });
@@ -906,7 +931,7 @@ describe('PostgreSQL-authoritative world compilation worker', () => {
 
   it.each([
     {
-      failureCall: 9,
+      failureCall: 10,
       input: worlds.entityRollback,
       namespace: '8108',
       ordinal: 8,
@@ -914,7 +939,7 @@ describe('PostgreSQL-authoritative world compilation worker', () => {
     },
     {
       failureCall:
-        9 +
+        10 +
         (compileWorld(exactInput(worlds.relationshipRollback.worldId)).artifact?.world.entities
           .length ?? 0),
       input: worlds.relationshipRollback,

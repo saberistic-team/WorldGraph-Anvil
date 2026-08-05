@@ -14,7 +14,7 @@ describe('system smoke queue', () => {
   let redis: Redis;
 
   beforeAll(async () => {
-    container = await new RedisContainer('redis:8.4.0-alpine').start();
+    container = await new RedisContainer('redis:8.4.5-alpine3.22').start();
     redis = new Redis(container.getConnectionUrl(), { maxRetriesPerRequest: null });
   });
 

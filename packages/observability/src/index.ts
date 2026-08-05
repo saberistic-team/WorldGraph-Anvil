@@ -17,7 +17,7 @@ import pino, { type Logger } from 'pino';
 const sensitiveKey =
   /(authorization|cookie|credential|password|pepper|secret|session|token|invite(?:link)?|api[-_]?key)/i;
 const privateContentKey =
-  /^(?:amount|artifact[-_]?content|balance|canonical[-_]?(?:content|manifest)|counterparty(?:[-_]?id)?|entity[-_]?state|manifest|memo|minor[-_]?units|price|prompt|prompt[-_]?text|raw[-_]?model[-_]?(?:payload|response)|wallet(?:[-_]?id)?)$/i;
+  /^(?:amount|artifact[-_]?content|balance|ballot[-_]?choice|canonical[-_]?(?:content|manifest)|choice|counterparty(?:[-_]?id)?|entity[-_]?state|manifest|memo|minor[-_]?units|price|prompt|prompt[-_]?text|raw[-_]?model[-_]?(?:payload|response)|selection|voter[-_]?choice[-_]?linkage|wallet(?:[-_]?id)?)$/i;
 const REDACTED = '[REDACTED]' as const;
 const MAX_TRACE_CORRELATION_IDS = 32;
 const MAX_TRACE_CORRELATION_VALUE_LENGTH = 128;
@@ -142,6 +142,62 @@ export function annotateActiveEconomyCommandSpan(input: EconomyCommandTraceCorre
   trace.getSpan(context.active())?.setAttributes(economyCommandTraceAttributes(input));
 }
 
+export interface GovernanceCommandTraceCorrelation {
+  actorId?: string;
+  commandId?: string;
+  commandType?: string;
+  contestId?: string;
+  contestType?: 'election' | 'proposal';
+  correlationId?: string;
+  eligibilitySnapshotId?: string;
+  eventIds?: readonly string[];
+  inputChecksum?: string;
+  occurrenceKey?: string;
+  receiptHash?: string;
+  resultChecksum?: string;
+  resultId?: string;
+  tick?: string;
+  worldId?: string;
+}
+
+/**
+ * Governance trace correlation deliberately has no ballot-choice field. Actor,
+ * world, contest, snapshot and receipt identities are domain-separated before
+ * export so a secret voter-to-choice linkage cannot be reconstructed from traces.
+ */
+export function governanceCommandTraceAttributes(
+  input: GovernanceCommandTraceCorrelation,
+): Attributes {
+  const attributes: Attributes = {};
+  setTraceValue(attributes, 'world.governance.command_id', input.commandId);
+  setTraceValue(attributes, 'world.governance.command_type', input.commandType);
+  setTraceValue(attributes, 'world.governance.contest_type', input.contestType);
+  setTraceValue(attributes, 'world.governance.correlation_id', input.correlationId);
+  setTraceValue(attributes, 'world.governance.input_checksum', input.inputChecksum);
+  setTraceValue(attributes, 'world.governance.occurrence_key', input.occurrenceKey);
+  setTraceValue(attributes, 'world.governance.receipt_hash', input.receiptHash);
+  setTraceValue(attributes, 'world.governance.result_checksum', input.resultChecksum);
+  setTraceValue(attributes, 'world.governance.result_id', input.resultId);
+  setTraceValue(attributes, 'world.governance.tick', input.tick);
+  setTraceReference(attributes, 'world.governance.actor_ref', 'actor', input.actorId);
+  setTraceReference(attributes, 'world.governance.contest_ref', 'contest', input.contestId);
+  setTraceReference(
+    attributes,
+    'world.governance.eligibility_snapshot_ref',
+    'eligibility-snapshot',
+    input.eligibilitySnapshotId,
+  );
+  setTraceReference(attributes, 'world.governance.world_ref', 'world', input.worldId);
+  setTraceValues(attributes, 'world.governance.event_ids', input.eventIds);
+  return attributes;
+}
+
+export function annotateActiveGovernanceCommandSpan(
+  input: GovernanceCommandTraceCorrelation,
+): void {
+  trace.getSpan(context.active())?.setAttributes(governanceCommandTraceAttributes(input));
+}
+
 function setTraceValue(attributes: Attributes, key: string, value: string | undefined): void {
   const normalized = traceCorrelationValue(value);
   if (normalized !== undefined) attributes[key] = normalized;
@@ -207,6 +263,42 @@ const primitiveCatalogVersionValues = new Map<
   { kind: string; lifecycle: string; value: number }
 >();
 const economyObjectCountValues = new Map<string, number>();
+const governanceProposalOperationalStates = new Set([
+  'draft',
+  'sponsoring',
+  'debate',
+  'scheduled',
+  'open',
+  'closing',
+  'tallied',
+  'certified',
+  'enacted',
+  'rejected',
+  'withdrawn',
+  'passed_but_enactment_failed',
+]);
+const governanceElectionOperationalStates = new Set([
+  'nominations_scheduled',
+  'nominations_open',
+  'voting_scheduled',
+  'open',
+  'closing',
+  'tallied',
+  'certified',
+  'cancelled',
+]);
+const governanceOperationalStateValues = new Map<
+  string,
+  {
+    eligibleCount: number;
+    state: string;
+    targetCount: number;
+    targetKind: 'election' | 'proposal';
+    turnoutCount: number;
+  }
+>();
+let governanceMaxProjectionLagRevisionsValue: number | undefined;
+let governancePendingOutboxCountValue: number | undefined;
 let economyLastRepairTimestampSecondsValue: number | undefined;
 let economyOpenExpiredOffersValue: number | undefined;
 let economyReconciliationMismatchesValue: number | undefined;
@@ -267,6 +359,62 @@ function createTelemetryInstruments() {
   primitiveCatalogVersionsGauge.addCallback((result) => {
     for (const entry of primitiveCatalogVersionValues.values()) {
       result.observe(entry.value, { kind: entry.kind, lifecycle: entry.lifecycle });
+    }
+  });
+  const governanceTargetsGauge = meter.createObservableGauge('worldgraph_governance_targets', {
+    description: 'Current proposal and election count by allowlisted target kind and state.',
+  });
+  governanceTargetsGauge.addCallback((result) => {
+    for (const entry of governanceOperationalStateValues.values()) {
+      result.observe(entry.targetCount, {
+        state: entry.state,
+        target_kind: entry.targetKind,
+      });
+    }
+  });
+  const governanceEligibleGauge = meter.createObservableGauge('worldgraph_governance_eligible', {
+    description:
+      'Aggregate frozen eligibility count by allowlisted governance target kind and state.',
+  });
+  governanceEligibleGauge.addCallback((result) => {
+    for (const entry of governanceOperationalStateValues.values()) {
+      result.observe(entry.eligibleCount, {
+        state: entry.state,
+        target_kind: entry.targetKind,
+      });
+    }
+  });
+  const governanceTurnoutGauge = meter.createObservableGauge('worldgraph_governance_turnout', {
+    description:
+      'Aggregate ballot-participation count by allowlisted governance target kind and state.',
+  });
+  governanceTurnoutGauge.addCallback((result) => {
+    for (const entry of governanceOperationalStateValues.values()) {
+      result.observe(entry.turnoutCount, {
+        state: entry.state,
+        target_kind: entry.targetKind,
+      });
+    }
+  });
+  const governanceProjectionLagGauge = meter.createObservableGauge(
+    'worldgraph_governance_projection_lag_revisions',
+    {
+      description:
+        'Maximum active-world revision gap between runtime authority and governance projection; saturated above the exact telemetry integer range.',
+    },
+  );
+  governanceProjectionLagGauge.addCallback((result) => {
+    if (governanceMaxProjectionLagRevisionsValue !== undefined) {
+      result.observe(governanceMaxProjectionLagRevisionsValue);
+    }
+  });
+  const governancePendingOutboxGauge = meter.createObservableGauge(
+    'worldgraph_governance_outbox_pending',
+    { description: 'Pending outbox messages produced by governance commands.' },
+  );
+  governancePendingOutboxGauge.addCallback((result) => {
+    if (governancePendingOutboxCountValue !== undefined) {
+      result.observe(governancePendingOutboxCountValue);
     }
   });
   const economyObjectCountGauge = meter.createObservableGauge('worldgraph_economy_object_count', {
@@ -449,6 +597,21 @@ function createTelemetryInstruments() {
     economySerializationRetries: meter.createCounter(
       'worldgraph_economy_serialization_retries_total',
     ),
+    governanceAuthorityDenies: meter.createCounter('worldgraph_governance_authority_denies_total'),
+    governanceBallotRejections: meter.createCounter(
+      'worldgraph_governance_ballot_rejections_total',
+    ),
+    governanceCommands: meter.createCounter('worldgraph_governance_commands_total'),
+    governanceEnactmentFailures: meter.createCounter(
+      'worldgraph_governance_enactment_failures_total',
+    ),
+    governanceOverrides: meter.createCounter('worldgraph_governance_overrides_total'),
+    governanceRepairs: meter.createCounter('worldgraph_governance_repairs_total'),
+    governanceSchedulerLag: meter.createHistogram('worldgraph_governance_scheduler_lag_ticks'),
+    governanceTallyChecksumMismatches: meter.createCounter(
+      'worldgraph_governance_tally_checksum_mismatches_total',
+    ),
+    governanceTallyDuration: meter.createHistogram('worldgraph_governance_tally_duration_ms'),
     httpDuration: meter.createHistogram('worldgraph_http_request_duration_ms'),
     identityAttempts: meter.createCounter('worldgraph_identity_attempts_total'),
     idempotency: meter.createCounter('worldgraph_idempotency_total'),
@@ -534,6 +697,15 @@ export const telemetry = {
   economyReconciliationDuration: bindHistogram('economyReconciliationDuration'),
   economyReconciliationRuns: bindCounter('economyReconciliationRuns'),
   economySerializationRetries: bindCounter('economySerializationRetries'),
+  governanceAuthorityDenies: bindCounter('governanceAuthorityDenies'),
+  governanceBallotRejections: bindCounter('governanceBallotRejections'),
+  governanceCommands: bindCounter('governanceCommands'),
+  governanceEnactmentFailures: bindCounter('governanceEnactmentFailures'),
+  governanceOverrides: bindCounter('governanceOverrides'),
+  governanceRepairs: bindCounter('governanceRepairs'),
+  governanceSchedulerLag: bindHistogram('governanceSchedulerLag'),
+  governanceTallyChecksumMismatches: bindCounter('governanceTallyChecksumMismatches'),
+  governanceTallyDuration: bindHistogram('governanceTallyDuration'),
   httpDuration: bindHistogram('httpDuration'),
   identityAttempts: bindCounter('identityAttempts'),
   idempotency: bindCounter('idempotency'),
@@ -576,6 +748,46 @@ export const telemetry = {
         value: entry.count,
       });
     }
+  },
+  setGovernanceOperationalState(input: {
+    maxProjectionLagRevisions: number;
+    pendingOutboxCount: number;
+    states: readonly {
+      eligibleCount: number;
+      state: string;
+      targetCount: number;
+      targetKind: 'election' | 'proposal';
+      turnoutCount: number;
+    }[];
+  }): void {
+    const expectedStateCount =
+      governanceProposalOperationalStates.size + governanceElectionOperationalStates.size;
+    if (input.states.length !== expectedStateCount) {
+      throw new Error('GOVERNANCE_OPERATIONAL_TELEMETRY_INVALID');
+    }
+    assertGovernanceOperationalMetricValue(input.maxProjectionLagRevisions);
+    assertGovernanceOperationalMetricValue(input.pendingOutboxCount);
+    const next = new Map<string, (typeof input.states)[number]>();
+    for (const entry of input.states) {
+      const allowed =
+        entry.targetKind === 'proposal'
+          ? governanceProposalOperationalStates.has(entry.state)
+          : governanceElectionOperationalStates.has(entry.state);
+      if (!allowed) throw new Error('GOVERNANCE_OPERATIONAL_TELEMETRY_INVALID');
+      assertGovernanceOperationalMetricValue(entry.eligibleCount);
+      assertGovernanceOperationalMetricValue(entry.targetCount);
+      assertGovernanceOperationalMetricValue(entry.turnoutCount);
+      const key = `${entry.targetKind}:${entry.state}`;
+      if (next.has(key)) throw new Error('GOVERNANCE_OPERATIONAL_TELEMETRY_INVALID');
+      next.set(key, entry);
+    }
+    if (next.size !== expectedStateCount) {
+      throw new Error('GOVERNANCE_OPERATIONAL_TELEMETRY_INVALID');
+    }
+    governanceOperationalStateValues.clear();
+    for (const [key, entry] of next) governanceOperationalStateValues.set(key, entry);
+    governanceMaxProjectionLagRevisionsValue = input.maxProjectionLagRevisions;
+    governancePendingOutboxCountValue = input.pendingOutboxCount;
   },
   setEconomyOperationalState(input: {
     activeReservationCount: number;
@@ -623,6 +835,12 @@ export const telemetry = {
   },
   smokeJobs: bindCounter('smokeJobs'),
 };
+
+function assertGovernanceOperationalMetricValue(value: number): void {
+  if (!Number.isSafeInteger(value) || value < 0) {
+    throw new Error('GOVERNANCE_OPERATIONAL_TELEMETRY_INVALID');
+  }
+}
 
 export interface TelemetryRuntime {
   shutdown(): Promise<void>;

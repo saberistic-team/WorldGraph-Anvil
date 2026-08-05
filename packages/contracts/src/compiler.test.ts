@@ -7,6 +7,7 @@ import {
   CONTRACT_SCHEMA_VERSION,
   RUNTIME_SCHEMA_VERSION,
   PREVIOUS_COMPILER_VERSION,
+  RETAINED_COMPILER_VERSION,
   WORLD_COMPILATION_QUEUE_SCHEMA_VERSION,
   WORLD_GRAPH_SCHEMA_VERSION,
   publicCompatibilityVersions,
@@ -29,7 +30,7 @@ const uuid = '018f8652-3cb6-7d52-904b-cce7901d7e25';
 const hash = 'a'.repeat(64);
 
 describe('compiler and runtime contracts', () => {
-  it('advances M09 compiler/artifact heads while retaining graph/config axes', () => {
+  it('advances M10 compiler/artifact heads while retaining graph/config axes', () => {
     expect({
       artifact: COMPILED_ARTIFACT_SCHEMA_VERSION,
       compiler: COMPILER_VERSION,
@@ -39,17 +40,17 @@ describe('compiler and runtime contracts', () => {
       runtime: RUNTIME_SCHEMA_VERSION,
       worldGraph: WORLD_GRAPH_SCHEMA_VERSION,
     }).toEqual({
-      artifact: 3,
-      compiler: '1.2.0',
+      artifact: 4,
+      compiler: '1.3.0',
       config: 1,
-      contracts: 9,
+      contracts: 10,
       queue: 1,
-      runtime: 9,
+      runtime: 10,
       worldGraph: 1,
     });
   });
 
-  it('exposes all sealed M04-M09 axes through public system metadata', () => {
+  it('exposes all sealed M04-M10 axes through public system metadata', () => {
     expect(
       createValidator(SystemInfoSchema).is({
         build: { api: 'test' },
@@ -71,7 +72,7 @@ describe('compiler and runtime contracts', () => {
     ).toBe(true);
     const queue = {
       compilerConfigVersion: 1,
-      compilerVersion: '1.2.0',
+      compilerVersion: '1.3.0',
       inputHash: hash,
       manifestRevisionId: uuid,
       runId: uuid,
@@ -80,6 +81,7 @@ describe('compiler and runtime contracts', () => {
     };
     const validator = createValidator(WorldCompilationRequestedQueueSchema);
     expect(validator.is(queue)).toBe(true);
+    expect(validator.is({ ...queue, compilerVersion: RETAINED_COMPILER_VERSION })).toBe(true);
     expect(validator.is({ ...queue, compilerVersion: PREVIOUS_COMPILER_VERSION })).toBe(true);
     expect(validator.is({ ...queue, compilerVersion: '1.0.0' })).toBe(false);
     expect(validator.is({ ...queue, manifest: { private: 'authority injection' } })).toBe(false);

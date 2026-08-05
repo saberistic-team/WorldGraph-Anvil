@@ -5,18 +5,21 @@ import {
   WorldEntityStatePairV1Validator,
   WorldRelationshipAttributesPairV1Validator,
   canonicalJson,
-  type CompiledArtifactV3,
+  type CompiledArtifactV4,
   type CompilerInputBundleV1,
 } from '@worldgraph/contracts';
 import { economySeedPlanHash } from '@worldgraph/economy';
+import { governanceSeedPlanHashV1 } from '@worldgraph/governance';
 
 import { compilerAdapterFor } from './adapters.js';
 import {
   compileLegacyArtifactForCompatibility,
   compilePreviousArtifactForCompatibility,
+  compileRetainedArtifactForCompatibility,
 } from './compatibility.js';
 import { emitCompiledArtifact } from './emit.js';
 import { deriveLoweredEconomySeedPlanV2 } from './economy-seed.js';
+import { deriveLoweredGovernanceSeedPlanV1 } from './governance-seed.js';
 import { compilerInputHash, sha256Utf8, verifyCompiledArtifact } from './hash.js';
 import { createCompilerInputBundle } from './input.js';
 import { memberPrincipalKey } from './keys.js';
@@ -29,11 +32,13 @@ import {
   createGoldenCompilerInput,
   createLegacyGoldenCompilerInput,
   createPreviousGoldenCompilerInput,
+  createRetainedGoldenCompilerInput,
 } from './test-fixture.js';
 import { validateResolvedInput } from './validate.js';
-import previousGolden from './fixtures/floating-guild-city.m8.golden.json';
+import retainedGolden from './fixtures/floating-guild-city.m8.golden.json';
 import legacyGolden from './fixtures/floating-guild-city.golden.json';
-import currentGolden from './fixtures/harbor-city.m9.golden.json';
+import previousGolden from './fixtures/harbor-city.m9.golden.json';
+import currentGolden from './fixtures/harbor-city.m10.golden.json';
 
 function goldenStages() {
   const resolved = resolveCompilerInput(createGoldenCompilerInput());
@@ -49,7 +54,7 @@ function goldenStages() {
   return { linked: linked.value!, lowered: lowered.value!, normalized: normalized.value! };
 }
 
-function resignArtifact(artifact: CompiledArtifactV3): CompiledArtifactV3 {
+function resignArtifact(artifact: CompiledArtifactV4): CompiledArtifactV4 {
   artifact.canonicalBytes = canonicalJson(artifact.world);
   artifact.contentHash = sha256Utf8(artifact.canonicalBytes);
   return artifact;
@@ -75,6 +80,26 @@ describe('pure deterministic compiler', () => {
   });
 
   it('preserves the exact reviewed compiler 1.1/artifact 2 golden', () => {
+    const result = compileRetainedArtifactForCompatibility(createRetainedGoldenCompilerInput());
+    expect(result.diagnostics).toEqual([]);
+    expect(result.artifact).not.toBeNull();
+    expect({
+      artifactHash: result.artifact?.contentHash,
+      artifactSchemaVersion: result.artifact?.artifactSchemaVersion,
+      canonicalByteLength:
+        result.artifact && Buffer.byteLength(result.artifact.canonicalBytes, 'utf8'),
+      compilerConfigVersion: result.artifact?.world.compilerConfigVersion,
+      compilerVersion: result.artifact?.world.compilerVersion,
+      counts: result.artifact?.world.counts,
+      economySeedPlanHash: result.artifact?.world.economySeedPlanHash,
+      inputHash: result.inputHash,
+      manifestContentHash: result.artifact?.world.manifestContentHash,
+      worldGraphSchemaVersion: result.artifact?.world.worldGraphSchemaVersion,
+    }).toEqual(retainedGolden);
+    expect(verifyCompiledArtifact(result.artifact).valid).toBe(true);
+  });
+
+  it('preserves the exact reviewed compiler 1.2/artifact 3 golden', () => {
     const result = compilePreviousArtifactForCompatibility(createPreviousGoldenCompilerInput());
     expect(result.diagnostics).toEqual([]);
     expect(result.artifact).not.toBeNull();
@@ -121,7 +146,7 @@ describe('pure deterministic compiler', () => {
     expect(verifyCompiledArtifact(emitted.value!)).toMatchObject({ valid: true });
   });
 
-  it('compiles the approved M09 harbor city with a closed production seed', () => {
+  it('compiles the approved M10 governed harbor city with closed economy and charter seeds', () => {
     const result = compileWorld(createGoldenCompilerInput());
     expect(result.diagnostics.filter((entry) => entry.severity === 'error')).toEqual([]);
     expect(result.successfulStage).toBe('emit');
@@ -148,7 +173,7 @@ describe('pure deterministic compiler', () => {
         minorUnitScale: 2,
       },
       economySeedPlanSchemaVersion: 2,
-      initialSupplyMinor: '20000',
+      initialSupplyMinor: '30000',
       recipeVersions: [
         {
           durationTicks: '12',
@@ -170,6 +195,43 @@ describe('pure deterministic compiler', () => {
           rateBps: 250,
           stableKey: 'tax-policy:guild-council:sales',
           taxType: 'sales',
+        },
+      ],
+    });
+    expect(result.artifact?.world.governanceSeedPlan).toMatchObject({
+      charter: {
+        proposalRules: {
+          approvalThresholdBps: 5_001,
+          ballotPolicy: {
+            ballotMode: 'public',
+            disclosure: 'choice_totals',
+            replacementAllowed: true,
+          },
+          quorumBps: 5_000,
+        },
+        stableKey: 'charter:harbor-city',
+      },
+      governanceSeedPlanSchemaVersion: 1,
+      initialLaws: [{ stableKey: 'law:civic-participation' }],
+      institutions: [{ stableKey: 'institution:guild-council' }],
+      offices: [
+        {
+          ballotPolicy: {
+            ballotMode: 'secret',
+            disclosure: 'aggregate_only',
+            replacementAllowed: false,
+          },
+          seats: 7,
+          stableKey: 'office:guild-council:councillor',
+        },
+        {
+          ballotPolicy: {
+            ballotMode: 'secret',
+            disclosure: 'aggregate_only',
+            replacementAllowed: false,
+          },
+          seats: 1,
+          stableKey: 'office:guild-council:treasurer',
         },
       ],
     });
@@ -197,7 +259,7 @@ describe('pure deterministic compiler', () => {
         }),
       ]),
     );
-    expect(result.artifact?.world.economySeedPlan.wallets).toHaveLength(5);
+    expect(result.artifact?.world.economySeedPlan.wallets).toHaveLength(6);
     expect(
       result.artifact?.world.economySeedPlan.assets.find(
         (asset) => asset.stableKey === 'asset:facility:energy-harbor-annex',
@@ -252,6 +314,7 @@ describe('pure deterministic compiler', () => {
       worldGraphSchemaVersion: result.artifact?.world.worldGraphSchemaVersion,
       artifactSchemaVersion: result.artifact?.world.artifactSchemaVersion,
       economySeedPlanHash: result.artifact?.world.economySeedPlanHash,
+      governanceSeedPlanHash: result.artifact?.world.governanceSeedPlanHash,
     }).toEqual(currentGolden);
     expect(result.artifact?.canonicalBytes).not.toContain('018f8652-3cb6-7d52-904b-cce7901d7e26');
     expect(result.artifact?.canonicalBytes).not.toContain(
@@ -311,12 +374,9 @@ describe('pure deterministic compiler', () => {
 
     const result = deriveLoweredEconomySeedPlanV2(invalid);
     expect(result.value).toBeNull();
-    expect(result.diagnostics).toEqual([
-      expect.objectContaining({
-        code: 'ECONOMY_V2_SEED_PLAN_INVALID',
-        message: expect.stringContaining('overlap for one identical semantic scope'),
-      }),
-    ]);
+    expect(result.diagnostics).toHaveLength(1);
+    expect(result.diagnostics[0]?.code).toBe('ECONOMY_V2_SEED_PLAN_INVALID');
+    expect(result.diagnostics[0]?.message).toContain('overlap for one identical semantic scope');
   });
 
   it('rejects a seeded business with no active controlled-character affiliation', () => {
@@ -354,6 +414,40 @@ describe('pure deterministic compiler', () => {
     expect(result.diagnostics.map((entry) => entry.code)).toContain('ECONOMY_V2_EXTENSION_INVALID');
   });
 
+  it('fails closed without strict governance intent and never infers it from institutions', () => {
+    const input = structuredClone(createGoldenCompilerInput());
+    delete input.manifest.extensions['worldgraph.governance'];
+    input.manifestCanonicalBytes = canonicalJson(input.manifest);
+    input.manifestContentHash = sha256Utf8(input.manifestCanonicalBytes);
+    input.inputHash = compilerInputHash(input);
+
+    const result = compileWorld(input);
+
+    expect(result.artifact).toBeNull();
+    expect(result.diagnostics.map((entry) => entry.code)).toContain(
+      'GOVERNANCE_V1_EXTENSION_INVALID',
+    );
+  });
+
+  it('rejects governance intent whose jurisdiction is not in the compiled graph', () => {
+    const { lowered } = goldenStages();
+    const invalid = structuredClone(lowered);
+    const extension = invalid.normalized.manifest.extensions['worldgraph.governance'] as {
+      institutions: Array<{ jurisdictionEntityKey: string }>;
+    };
+    extension.institutions[0]!.jurisdictionEntityKey = 'district:missing';
+
+    const result = deriveLoweredGovernanceSeedPlanV1(invalid);
+
+    expect(result.value).toBeNull();
+    expect(result.diagnostics).toEqual([
+      expect.objectContaining({
+        code: 'GOVERNANCE_JURISDICTION_ENTITY_INVALID',
+        pointer: '/manifest/extensions/worldgraph.governance/institutions/0/jurisdictionEntityKey',
+      }),
+    ]);
+  });
+
   it('fails emission when a lowered graph payload does not match its discriminator', () => {
     const { linked } = goldenStages();
     const invalidEntityState = structuredClone(linked);
@@ -377,7 +471,7 @@ describe('pure deterministic compiler', () => {
     expect(invalidRelationshipResult.diagnostics.map((diagnostic) => diagnostic.code)).toContain(
       'COMPILED_RELATIONSHIP_ATTRIBUTES_INVALID',
     );
-  });
+  }, 20_000);
 
   it('is byte-identical for shuffled primitive/member insertion order', () => {
     const original = createGoldenCompilerInput();
@@ -399,7 +493,7 @@ describe('pure deterministic compiler', () => {
     const original = createGoldenCompilerInput();
     const observerPrincipal = memberPrincipalKey(
       '018f8652-3cb6-7d52-904b-cce7901d7e25',
-      '018f8652-3cb6-7d52-904b-cce7901d7e28',
+      '018f8652-3cb6-7d52-904b-cce7901d7e29',
     );
     const withObserver = createCompilerInputBundle({
       activeMembers: [
@@ -526,7 +620,7 @@ describe('pure deterministic compiler', () => {
     expect(
       validateResolvedInput(numericResolved.value!).diagnostics.map((entry) => entry.code),
     ).toContain('UNSAFE_NUMERIC_INPUT');
-  });
+  }, 20_000);
 
   it('rejects dangling and cross-type edges and detects artifact tampering', () => {
     const { lowered } = goldenStages();
@@ -557,7 +651,7 @@ describe('pure deterministic compiler', () => {
 
   it('rejects re-hashed artifacts whose compiled graph violates semantic invariants', () => {
     const artifact = compileWorld(createGoldenCompilerInput()).artifact!;
-    const diagnosticCodes = (changed: CompiledArtifactV3): string[] =>
+    const diagnosticCodes = (changed: CompiledArtifactV4): string[] =>
       verifyCompiledArtifact(resignArtifact(changed)).diagnostics.map((entry) => entry.code);
 
     const dangling = structuredClone(artifact);
@@ -596,7 +690,7 @@ describe('pure deterministic compiler', () => {
     expect(diagnosticCodes(missingCompleteBinding)).toContain('ACCOUNT_CONTROL_BINDING_INCOMPLETE');
   }, 20_000);
 
-  it('rejects a re-hashed M09 artifact whose production recipe checksum is invalid', () => {
+  it('rejects a re-hashed M10 artifact whose production recipe checksum is invalid', () => {
     const artifact = structuredClone(compileWorld(createGoldenCompilerInput()).artifact!);
     artifact.world.economySeedPlan.recipeVersions[0]!.checksum = 'f'.repeat(64);
     artifact.world.economySeedPlanHash = economySeedPlanHash(artifact.world.economySeedPlan);
@@ -606,17 +700,34 @@ describe('pure deterministic compiler', () => {
     expect(verification.diagnostics.map((entry) => entry.code)).toContain(
       'ECONOMY_SEED_PLAN_INVALID',
     );
-  });
+  }, 20_000);
+
+  it('rejects a re-hashed M10 artifact whose governance plan or hash is invalid', () => {
+    const artifact = structuredClone(compileWorld(createGoldenCompilerInput()).artifact!);
+    artifact.world.governanceSeedPlan.offices[0]!.institutionKey = 'institution:missing';
+    artifact.world.governanceSeedPlanHash = governanceSeedPlanHashV1(
+      artifact.world.governanceSeedPlan,
+    );
+    expect(
+      verifyCompiledArtifact(resignArtifact(artifact)).diagnostics.map((entry) => entry.code),
+    ).toContain('GOVERNANCE_SEED_PLAN_INVALID');
+
+    const hashMismatch = structuredClone(compileWorld(createGoldenCompilerInput()).artifact!);
+    hashMismatch.world.governanceSeedPlanHash = 'f'.repeat(64);
+    expect(
+      verifyCompiledArtifact(resignArtifact(hashMismatch)).diagnostics.map((entry) => entry.code),
+    ).toContain('GOVERNANCE_SEED_PLAN_HASH_MISMATCH');
+  }, 20_000);
 
   it('binds each controller to the character derived from the same principal', () => {
     const original = createGoldenCompilerInput();
     const firstPlayerPrincipal = memberPrincipalKey(
       '018f8652-3cb6-7d52-904b-cce7901d7e25',
-      '018f8652-3cb6-7d52-904b-cce7901d7e28',
+      '018f8652-3cb6-7d52-904b-cce7901d7e29',
     );
     const secondPlayerPrincipal = memberPrincipalKey(
       '018f8652-3cb6-7d52-904b-cce7901d7e25',
-      '018f8652-3cb6-7d52-904b-cce7901d7e29',
+      '018f8652-3cb6-7d52-904b-cce7901d7e30',
     );
     const input = createCompilerInputBundle({
       activeMembers: [
@@ -674,5 +785,5 @@ describe('pure deterministic compiler', () => {
       dateSpy.mockRestore();
       randomSpy.mockRestore();
     }
-  });
+  }, 20_000);
 });

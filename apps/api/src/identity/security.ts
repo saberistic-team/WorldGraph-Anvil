@@ -115,13 +115,21 @@ export function secretsMatch(left: Buffer, right: Buffer): boolean {
 }
 
 const ALLOWED_AUDIT_KEYS = new Set([
+  'approvalExpiresAt',
+  'approvalIssuedAt',
   'authorityReasonCode',
   'authorityRuleId',
+  'bindingHash',
+  'commandId',
+  'commandRequestHash',
+  'commandType',
   'credentialResult',
+  'method',
   'newRole',
   'override',
   'previousRole',
   'registrationMode',
+  'sessionId',
 ]);
 
 export function redactAuditMetadata(input: Record<string, unknown>): Record<string, unknown> {

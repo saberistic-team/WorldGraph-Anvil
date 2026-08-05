@@ -31,6 +31,24 @@ const request: CommerceScheduledCommandRequest = {
   worldId: '019c5555-5555-7555-8555-555555555555',
 };
 
+function acceptedStoredCommand(
+  storedRequest: CommerceScheduledCommandRequest,
+  resultingStateRevision = '91',
+) {
+  return {
+    actor_id: 'worldgraph:commerce-scheduler',
+    actor_type: 'system',
+    causation_id: storedRequest.completedEventId,
+    command_type: storedRequest.actionType,
+    id: storedRequest.commandId,
+    idempotency_key: storedRequest.idempotencyKey,
+    request_hash: commerceScheduledRequestHashV1(storedRequest),
+    response_summary: { resultingStateRevision },
+    status: 'accepted',
+    world_id: storedRequest.worldId,
+  };
+}
+
 describe('commerce scheduled Postgres command', () => {
   it('normalizes only zero-padded PostgreSQL numeric digits beyond the declared scale', () => {
     expect(parsePostgresQuantityV1('100.000000000000', 0)).toBe(100n);
@@ -140,6 +158,118 @@ describe('commerce scheduled Postgres command', () => {
     expect(queries.at(-1)).toBe('rollback');
   });
 
+  it('re-reads an exact replay after a concurrent command receipt wins', async () => {
+    const attempts: string[][] = [];
+    const retryDelay = vi.fn(async () => undefined);
+    const connect = vi.fn(async () => {
+      const attempt = attempts.length;
+      const queries: string[] = [];
+      attempts.push(queries);
+      return {
+        async query(sql: string) {
+          queries.push(sql);
+          if (attempt === 0 && sql.includes('insert into command_records')) {
+            throw Object.assign(new Error('duplicate command receipt'), {
+              code: '23505',
+              constraint: 'command_records_pkey',
+            });
+          }
+          if (attempt === 1 && sql.includes('where id=$1 for update')) {
+            return { rowCount: 1, rows: [acceptedStoredCommand(request)] };
+          }
+          return { rowCount: 0, rows: [] };
+        },
+        release: vi.fn(),
+      };
+    });
+    const command = new PostgresCommerceScheduledCommand({ connect } as unknown as Pool, {
+      ids: { next: () => '019c8888-8888-7888-8888-888888888888' },
+      retryDelay,
+    });
+
+    await expect(command.execute(request)).resolves.toEqual({
+      resultingStateRevision: '91',
+      status: 'applied',
+    });
+    expect(connect).toHaveBeenCalledTimes(2);
+    expect(retryDelay).toHaveBeenCalledOnce();
+    expect(retryDelay).toHaveBeenCalledWith(0);
+    expect(attempts.flat().filter((sql) => sql === 'rollback')).toHaveLength(2);
+    expect(attempts.flat().some((sql) => sql.includes('worldgraph_open_command_write'))).toBe(
+      false,
+    );
+  });
+
+  it('returns conflict after a raced idempotency key resolves to a changed payload', async () => {
+    const changedRequest: CommerceScheduledCommandRequest = {
+      ...request,
+      commandId: '019c6666-6666-7666-8666-666666666666',
+      payload: { productionRunId: '019c7777-7777-7777-8777-777777777777' },
+    };
+    const attempts: string[][] = [];
+    const retryDelay = vi.fn(async () => undefined);
+    const connect = vi.fn(async () => {
+      const attempt = attempts.length;
+      const queries: string[] = [];
+      attempts.push(queries);
+      return {
+        async query(sql: string) {
+          queries.push(sql);
+          if (attempt === 0 && sql.includes('insert into command_records')) {
+            throw Object.assign(new Error('duplicate idempotency key'), {
+              code: '23505',
+              constraint: 'command_records_idempotency_unique',
+            });
+          }
+          if (attempt === 1 && sql.includes("actor_type='system'")) {
+            return { rowCount: 1, rows: [acceptedStoredCommand(request)] };
+          }
+          return { rowCount: 0, rows: [] };
+        },
+        release: vi.fn(),
+      };
+    });
+    const command = new PostgresCommerceScheduledCommand({ connect } as unknown as Pool, {
+      ids: { next: () => '019c8888-8888-7888-8888-888888888888' },
+      retryDelay,
+    });
+
+    await expect(command.execute(changedRequest)).resolves.toEqual({ status: 'conflict' });
+    expect(connect).toHaveBeenCalledTimes(2);
+    expect(retryDelay).toHaveBeenCalledOnce();
+    expect(attempts.flat().filter((sql) => sql === 'rollback')).toHaveLength(2);
+    expect(attempts.flat().some((sql) => sql.includes('worldgraph_open_command_write'))).toBe(
+      false,
+    );
+  });
+
+  it('does not retry unrelated unique violations', async () => {
+    const retryDelay = vi.fn(async () => undefined);
+    const connect = vi.fn(async () => ({
+      async query(sql: string) {
+        if (sql.includes('insert into command_records')) {
+          throw Object.assign(new Error('unrelated uniqueness failure'), {
+            code: '23505',
+            constraint: 'some_other_unique_constraint',
+          });
+        }
+        return { rowCount: 0, rows: [] };
+      },
+      release: vi.fn(),
+    }));
+    const command = new PostgresCommerceScheduledCommand({ connect } as unknown as Pool, {
+      ids: { next: () => '019c8888-8888-7888-8888-888888888888' },
+      retryDelay,
+    });
+
+    await expect(command.execute(request)).rejects.toMatchObject({
+      code: '23505',
+      constraint: 'some_other_unique_constraint',
+    });
+    expect(connect).toHaveBeenCalledOnce();
+    expect(retryDelay).not.toHaveBeenCalled();
+  });
+
   it('rejects caller-supplied fields beyond the one target identifier', async () => {
     const pool = {
       async connect() {
@@ -216,8 +346,10 @@ describe('commerce scheduled Postgres command', () => {
     expect(payroll).toContain('payroll.performed_tick');
     expect(payroll).toContain('assessTax(snapshottedTaxPolicyState(policy), gross)');
     expect(payroll).toContain('occurredTick: payroll.performed_tick');
-    expect(policyLookup).toContain('effective_from_tick <= $4::bigint');
-    expect(policyLookup).toContain('effective_until_tick > $4::bigint');
+    expect(policyLookup).toContain(
+      'worldgraph_tax_policy_effective_at_v2($1,$3::tax_policy_type,$4::bigint)',
+    );
+    expect(policyLookup).not.toContain('effective_until_tick >');
     expect(policyLookup).not.toContain("status='active'");
     expect(policyLookup).not.toContain('current_tick');
   });

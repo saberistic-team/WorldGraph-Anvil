@@ -68,6 +68,8 @@ interface SimulationMockState {
   tick: number;
 }
 
+type NoticeScheduledAction = Extract<ScheduledActionV1, { actionType: 'EmitWorldNoticeV1' }>;
+
 function fixtureUuid(sequence: number): string {
   return `018f8652-3cb6-7d52-904b-${sequence.toString(16).padStart(12, '0')}`;
 }
@@ -84,7 +86,7 @@ function checkedJson(route: Route, validator: ContractValidator, body: object, s
   return json(route, body, status);
 }
 
-function scheduledNotice(stateRevision = 1): ScheduledActionV1 {
+function scheduledNotice(stateRevision = 1): NoticeScheduledAction {
   return {
     actionSchemaVersion: 1,
     actionType: 'EmitWorldNoticeV1',

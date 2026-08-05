@@ -64,7 +64,7 @@ describe('M09 commerce scheduler contracts', () => {
     ).toBe(true);
   });
 
-  it('retains registry-1 outcome readability while admitting registry 2', () => {
+  it('retains earlier outcomes while admitting the governance registry', () => {
     const validator = createValidator(SimulationOutcomeV1Schema);
     const outcome = {
       fromTick: '1',
@@ -78,6 +78,7 @@ describe('M09 commerce scheduler contracts', () => {
     };
     expect(validator.is(outcome)).toBe(true);
     expect(validator.is({ ...outcome, processRegistryVersion: 2 })).toBe(true);
-    expect(validator.is({ ...outcome, processRegistryVersion: 3 })).toBe(false);
+    expect(validator.is({ ...outcome, processRegistryVersion: 3 })).toBe(true);
+    expect(validator.is({ ...outcome, processRegistryVersion: 4 })).toBe(false);
   });
 });

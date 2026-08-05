@@ -11,6 +11,8 @@ import {
 } from '@worldgraph/contracts';
 
 import type { AuthenticatedActor } from '../identity/service.js';
+import type { GovernanceRecentCredentialProof } from '@worldgraph/governance-command';
+import { ApplicationError } from '../application/errors.js';
 import {
   ScheduledActionPageTransportSchema,
   SimulationBatchPageTransportSchema,
@@ -39,7 +41,10 @@ const ScheduledActionParams = Type.Object(
   { additionalProperties: false },
 );
 const MutationHeaders = Type.Object(
-  { 'x-csrf-token': Type.Optional(Type.String({ maxLength: 128, minLength: 32 })) },
+  {
+    'x-csrf-token': Type.Optional(Type.String({ maxLength: 128, minLength: 32 })),
+    'x-recent-credential-proof': Type.Optional(Type.String({ maxLength: 256 })),
+  },
   { additionalProperties: true },
 );
 const CommandOrErrorSchema = Type.Union([WorldCommandResultTransportSchema, ErrorEnvelopeSchema]);
@@ -58,6 +63,11 @@ const commonErrors = {
 export interface CommandRouteAuthentication {
   authenticate(request: FastifyRequest): Promise<AuthenticatedActor>;
   mutation(request: FastifyRequest): Promise<AuthenticatedActor>;
+  recentCredential?(
+    actor: AuthenticatedActor,
+    proofToken: string | undefined,
+    command: SubmitWorldCommand,
+  ): GovernanceRecentCredentialProof;
 }
 
 function commandRateLimitKey(request: FastifyRequest): string {
@@ -96,11 +106,29 @@ export async function registerCommandRoutes(
       },
     },
     async (request, reply) => {
+      const actor = await authentication.mutation(request);
+      const recentCredential = privilegedGovernanceCommand(request.body.type)
+        ? authentication.recentCredential?.(
+            actor,
+            typeof request.headers['x-recent-credential-proof'] === 'string'
+              ? request.headers['x-recent-credential-proof']
+              : undefined,
+            request.body,
+          )
+        : undefined;
+      if (privilegedGovernanceCommand(request.body.type) && !recentCredential) {
+        throw new ApplicationError(
+          'RECENT_CREDENTIAL_REQUIRED',
+          'Recent password verification is required.',
+          403,
+        );
+      }
       const outcome = await service.submit(
-        await authentication.mutation(request),
+        actor,
         request.params.id,
         request.body,
         request.id,
+        recentCredential,
       );
       return reply.code(outcome.httpStatus).send(outcome.result);
     },
@@ -228,4 +256,8 @@ export async function registerCommandRoutes(
         request.params.ledgerSequence,
       ),
   );
+}
+
+function privilegedGovernanceCommand(type: string): boolean {
+  return type === 'ExecuteCreatorOverrideV1' || type === 'RepairGovernanceResultV1';
 }
