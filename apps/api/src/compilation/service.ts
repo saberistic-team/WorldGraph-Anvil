@@ -3,6 +3,7 @@ import { createHmac, timingSafeEqual } from 'node:crypto';
 import type { RuntimeConfig } from '@worldgraph/config';
 import {
   createCompilerInputBundle,
+  createGovernanceCompilerInputBundle,
   createPreviousCompilerInputBundle,
   createRetainedCompilerInputBundle,
   memberPrincipalKey,
@@ -11,6 +12,7 @@ import {
 import {
   COMPILER_CONFIG_SCHEMA_VERSION,
   COMPILER_VERSION,
+  GOVERNANCE_COMPILER_VERSION,
   PREVIOUS_COMPILER_VERSION,
   RETAINED_COMPILER_VERSION,
   canonicalJson,
@@ -24,6 +26,7 @@ import {
   type PreviousCompilerInputBundleV1,
   type RetainedCompilerInputBundleV1,
   type CompilerInputBundleV1,
+  type GovernanceCompilerInputBundleV1,
   type RuntimeRevisionMetadata,
   type RuntimeSummaryView,
   type StartWorldCompilationRequest,
@@ -66,13 +69,16 @@ interface CursorPayload {
 }
 
 type RunnableCompilerVersion =
-  typeof RETAINED_COMPILER_VERSION | typeof PREVIOUS_COMPILER_VERSION | typeof COMPILER_VERSION;
+  | typeof RETAINED_COMPILER_VERSION
+  | typeof PREVIOUS_COMPILER_VERSION
+  | typeof GOVERNANCE_COMPILER_VERSION
+  | typeof COMPILER_VERSION;
 
 /**
- * Manifest V1 is shared by the sealed M08, M09, and current M10 compiler lanes.
- * Governance V1 requires compiler 1.3/artifact 4; economy V2 without governance
- * stays on 1.2/artifact 3; absent/economy-V1 manifests remain reproducible on
- * the retained 1.1/artifact 2 lane.
+ * Manifest V1 is shared across sealed compiler lanes. Governance V1 natively
+ * requires compiler 1.4/artifact 5 (exact 1.3/artifact 4 remains executable);
+ * economy V2 without governance stays on 1.2/artifact 3; absent/economy-V1
+ * manifests remain reproducible on the retained 1.1/artifact 2 lane.
  */
 export function compilerVersionForManifest(manifest: WorldManifestV1): RunnableCompilerVersion {
   const governance = manifest.extensions['worldgraph.governance'];
@@ -705,7 +711,10 @@ export class CompilationService {
     seed: string,
     compilerVersion: RunnableCompilerVersion,
   ): Promise<
-    CompilerInputBundleV1 | PreviousCompilerInputBundleV1 | RetainedCompilerInputBundleV1
+    | CompilerInputBundleV1
+    | GovernanceCompilerInputBundleV1
+    | PreviousCompilerInputBundleV1
+    | RetainedCompilerInputBundleV1
   > {
     const primitives = await repository.compilationPrimitives(manifest);
     const members = await repository.activeMembers(worldId);
@@ -730,6 +739,9 @@ export class CompilationService {
       seed,
     };
     if (compilerVersion === COMPILER_VERSION) return createCompilerInputBundle(options);
+    if (compilerVersion === GOVERNANCE_COMPILER_VERSION) {
+      return createGovernanceCompilerInputBundle(options);
+    }
     return compilerVersion === PREVIOUS_COMPILER_VERSION
       ? createPreviousCompilerInputBundle(options)
       : createRetainedCompilerInputBundle(options);
@@ -738,6 +750,7 @@ export class CompilationService {
   private runnableCompilerVersion(version: string): RunnableCompilerVersion {
     if (
       version === COMPILER_VERSION ||
+      version === GOVERNANCE_COMPILER_VERSION ||
       version === PREVIOUS_COMPILER_VERSION ||
       version === RETAINED_COMPILER_VERSION
     ) {

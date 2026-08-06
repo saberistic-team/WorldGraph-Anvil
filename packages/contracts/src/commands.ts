@@ -2,6 +2,7 @@ import { Type, type Static } from '@sinclair/typebox';
 
 import {
   COMPILER_VERSION,
+  GOVERNANCE_COMPILER_VERSION,
   PREVIOUS_COMPILER_VERSION,
   RETAINED_COMPILER_VERSION,
 } from './versions.js';
@@ -246,6 +247,7 @@ export const ApplicationNotificationSchema = Type.Union([
           Type.Union([
             Type.Literal(RETAINED_COMPILER_VERSION),
             Type.Literal(PREVIOUS_COMPILER_VERSION),
+            Type.Literal(GOVERNANCE_COMPILER_VERSION),
             Type.Literal(COMPILER_VERSION),
           ]),
         ),

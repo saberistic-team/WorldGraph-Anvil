@@ -684,6 +684,7 @@ describe('PostgreSQL-authoritative world compilation worker', () => {
     let writerCommitted = false;
     try {
       await writer.query('begin');
+      await writer.query('lock table world_memberships in exclusive mode');
       await writer.query(
         `update world_memberships
             set role = 'observer', row_version = row_version + 1, updated_at = now()

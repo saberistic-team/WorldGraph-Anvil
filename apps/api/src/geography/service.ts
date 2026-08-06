@@ -112,14 +112,14 @@ export class GeographyReadService {
         `select stable_key, entity_logical_key, zoning,
                 (
                   select coalesce(jsonb_agg(jsonb_build_array(
-                    round(ST_X((dp).geom)::numeric * 1000),
-                    round(ST_Y((dp).geom)::numeric * 1000)
+                    round(extensions.ST_X((dp).geom)::numeric * 1000),
+                    round(extensions.ST_Y((dp).geom)::numeric * 1000)
                   ) order by (dp).path), '[]'::jsonb)
-                  from ST_DumpPoints(ST_ExteriorRing(geom)) as dp
+                  from extensions.ST_DumpPoints(extensions.ST_ExteriorRing(geom)) as dp
                 ) as coords
            from districts
           where world_id = $1::uuid
-            and geom && ST_MakeEnvelope($2::float8,$3::float8,$4::float8,$5::float8,3857)
+            and geom OPERATOR(extensions.&&) extensions.ST_MakeEnvelope($2::float8,$3::float8,$4::float8,$5::float8,3857)
           order by stable_key
           limit 200`,
         [worldId, ...bounds],
@@ -148,11 +148,11 @@ export class GeographyReadService {
         y_milli: string;
       }>(
         `select stable_key, entity_logical_key, archetype,
-                round(ST_X(centroid)::numeric * 1000)::text as x_milli,
-                round(ST_Y(centroid)::numeric * 1000)::text as y_milli
+                round(extensions.ST_X(centroid)::numeric * 1000)::text as x_milli,
+                round(extensions.ST_Y(centroid)::numeric * 1000)::text as y_milli
            from building_placements
           where world_id = $1::uuid
-            and centroid && ST_MakeEnvelope($2::float8,$3::float8,$4::float8,$5::float8,3857)
+            and centroid OPERATOR(extensions.&&) extensions.ST_MakeEnvelope($2::float8,$3::float8,$4::float8,$5::float8,3857)
           order by stable_key
           limit 200`,
         [worldId, ...bounds],
@@ -176,12 +176,12 @@ export class GeographyReadService {
         y_milli: string;
       }>(
         `select stable_key,
-                round(ST_X(location)::numeric * 1000)::text as x_milli,
-                round(ST_Y(location)::numeric * 1000)::text as y_milli
+                round(extensions.ST_X(location)::numeric * 1000)::text as x_milli,
+                round(extensions.ST_Y(location)::numeric * 1000)::text as y_milli
            from spawn_points
           where world_id = $1::uuid
             and active
-            and location && ST_MakeEnvelope($2::float8,$3::float8,$4::float8,$5::float8,3857)
+            and location OPERATOR(extensions.&&) extensions.ST_MakeEnvelope($2::float8,$3::float8,$4::float8,$5::float8,3857)
           order by priority desc, stable_key
           limit 32`,
         [worldId, ...bounds],
@@ -207,14 +207,14 @@ export class GeographyReadService {
         `select stable_key, road_class,
                 (
                   select coalesce(jsonb_agg(jsonb_build_array(
-                    round(ST_X((dp).geom)::numeric * 1000),
-                    round(ST_Y((dp).geom)::numeric * 1000)
+                    round(extensions.ST_X((dp).geom)::numeric * 1000),
+                    round(extensions.ST_Y((dp).geom)::numeric * 1000)
                   ) order by (dp).path), '[]'::jsonb)
-                  from ST_DumpPoints(geom) as dp
+                  from extensions.ST_DumpPoints(geom) as dp
                 ) as coords
            from roads
           where world_id = $1::uuid
-            and geom && ST_MakeEnvelope($2::float8,$3::float8,$4::float8,$5::float8,3857)
+            and geom OPERATOR(extensions.&&) extensions.ST_MakeEnvelope($2::float8,$3::float8,$4::float8,$5::float8,3857)
           order by stable_key
           limit 100`,
         [worldId, ...bounds],
@@ -243,11 +243,11 @@ export class GeographyReadService {
         y_milli: string;
       }>(
         `select stable_key, entity_logical_key, kind,
-                round(ST_X(location)::numeric * 1000)::text as x_milli,
-                round(ST_Y(location)::numeric * 1000)::text as y_milli
+                round(extensions.ST_X(location)::numeric * 1000)::text as x_milli,
+                round(extensions.ST_Y(location)::numeric * 1000)::text as y_milli
            from points_of_interest
           where world_id = $1::uuid
-            and location && ST_MakeEnvelope($2::float8,$3::float8,$4::float8,$5::float8,3857)
+            and location OPERATOR(extensions.&&) extensions.ST_MakeEnvelope($2::float8,$3::float8,$4::float8,$5::float8,3857)
           order by stable_key
           limit 100`,
         [worldId, ...bounds],
@@ -347,8 +347,8 @@ export class GeographyReadService {
       y_milli: string;
     }>(
       `select access_policy, priority, radius_milli::text, stable_key,
-              round(ST_X(location)::numeric * 1000)::text as x_milli,
-              round(ST_Y(location)::numeric * 1000)::text as y_milli
+              round(extensions.ST_X(location)::numeric * 1000)::text as x_milli,
+              round(extensions.ST_Y(location)::numeric * 1000)::text as y_milli
          from spawn_points
         where world_id = $1::uuid and active
         order by priority desc, stable_key
@@ -399,8 +399,8 @@ export class GeographyReadService {
       y_milli: string;
     }>(
       `select stable_key, entity_logical_key, archetype,
-              round(ST_X(centroid)::numeric * 1000)::text as x_milli,
-              round(ST_Y(centroid)::numeric * 1000)::text as y_milli
+              round(extensions.ST_X(centroid)::numeric * 1000)::text as x_milli,
+              round(extensions.ST_Y(centroid)::numeric * 1000)::text as y_milli
          from building_placements
         where world_id = $1::uuid
           and (entity_logical_key = $2 or stable_key = $2)
@@ -429,10 +429,10 @@ export class GeographyReadService {
         `select stable_key, entity_logical_key, zoning,
                 (
                   select coalesce(jsonb_agg(jsonb_build_array(
-                    round(ST_X((dp).geom)::numeric * 1000),
-                    round(ST_Y((dp).geom)::numeric * 1000)
+                    round(extensions.ST_X((dp).geom)::numeric * 1000),
+                    round(extensions.ST_Y((dp).geom)::numeric * 1000)
                   ) order by (dp).path), '[]'::jsonb)
-                  from ST_DumpPoints(ST_ExteriorRing(geom)) as dp
+                  from extensions.ST_DumpPoints(extensions.ST_ExteriorRing(geom)) as dp
                 ) as coords
            from districts
           where world_id = $1::uuid

@@ -1,8 +1,10 @@
 import {
+  compileGovernanceArtifactForCompatibility,
   compilePreviousArtifactForCompatibility,
   compileRetainedArtifactForCompatibility,
   compileWorld,
   createCompilerInputBundle,
+  createGovernanceCompilerInputBundle,
   createPreviousCompilerInputBundle,
   createRetainedCompilerInputBundle,
   memberPrincipalKey,
@@ -12,6 +14,7 @@ import {
   ApplicationNotificationSchema,
   COMPILER_CONFIG_SCHEMA_VERSION,
   COMPILER_VERSION,
+  GOVERNANCE_COMPILER_VERSION,
   PREVIOUS_COMPILER_VERSION,
   RETAINED_COMPILER_VERSION,
   SystemClock,
@@ -21,6 +24,7 @@ import {
   type Clock,
   type CompilerDiagnosticV1,
   type CompilerInputBundleV1,
+  type GovernanceCompilerInputBundleV1,
   type IdGenerator,
   type PreviousCompilerInputBundleV1,
   type RetainedCompilerInputBundleV1,
@@ -53,7 +57,16 @@ export interface WorldCompilationRunResult {
 }
 
 type ExecutableCompilerInputBundle =
-  CompilerInputBundleV1 | PreviousCompilerInputBundleV1 | RetainedCompilerInputBundleV1;
+  | CompilerInputBundleV1
+  | GovernanceCompilerInputBundleV1
+  | PreviousCompilerInputBundleV1
+  | RetainedCompilerInputBundleV1;
+
+type RunnableCompilerVersion =
+  | typeof COMPILER_VERSION
+  | typeof GOVERNANCE_COMPILER_VERSION
+  | typeof PREVIOUS_COMPILER_VERSION
+  | typeof RETAINED_COMPILER_VERSION;
 
 export interface WorldCompilationMetrics {
   recordArtifact(entities: number, relationships: number): void;
@@ -169,7 +182,7 @@ function hasHashMismatch(diagnostics: readonly CompilerDiagnosticV1[]): boolean 
 
 function requiredCompilerVersion(
   manifest: WorldCompilationSource['manifest'],
-): typeof RETAINED_COMPILER_VERSION | typeof PREVIOUS_COMPILER_VERSION | typeof COMPILER_VERSION {
+): RunnableCompilerVersion {
   const governance = manifest.extensions['worldgraph.governance'];
   if (
     governance !== null &&
@@ -186,6 +199,25 @@ function requiredCompilerVersion(
     economy.schemaVersion === 2
     ? PREVIOUS_COMPILER_VERSION
     : RETAINED_COMPILER_VERSION;
+}
+
+function compilerLaneMatches(
+  manifest: WorldCompilationSource['manifest'],
+  jobCompilerVersion: string,
+): boolean {
+  const required = requiredCompilerVersion(manifest);
+  if (jobCompilerVersion === required) return true;
+  const governance = manifest.extensions['worldgraph.governance'];
+  // Exact retained governance lane (1.3.0/artifact 4) remains executable for
+  // governance manifests while native compile advances to 1.4.0/artifact 5.
+  return (
+    required === COMPILER_VERSION &&
+    jobCompilerVersion === GOVERNANCE_COMPILER_VERSION &&
+    governance !== null &&
+    typeof governance === 'object' &&
+    !Array.isArray(governance) &&
+    governance.schemaVersion === 1
+  );
 }
 
 export class WorldCompilationRunner {
@@ -341,6 +373,7 @@ export class WorldCompilationRunner {
         if (
           (job.compilerVersion !== RETAINED_COMPILER_VERSION &&
             job.compilerVersion !== PREVIOUS_COMPILER_VERSION &&
+            job.compilerVersion !== GOVERNANCE_COMPILER_VERSION &&
             job.compilerVersion !== COMPILER_VERSION) ||
           job.compilerConfigVersion !== COMPILER_CONFIG_SCHEMA_VERSION
         ) {
@@ -352,7 +385,7 @@ export class WorldCompilationRunner {
             ? ({ kind: 'source_stale' } as const)
             : ({ kind: 'lost_claim' } as const);
         }
-        if (requiredCompilerVersion(source.manifest) !== job.compilerVersion) {
+        if (!compilerLaneMatches(source.manifest, job.compilerVersion)) {
           return { kind: 'version_mismatch' } as const;
         }
         const bundle = this.bundle(job, source);
@@ -413,7 +446,9 @@ export class WorldCompilationRunner {
             ? compileRetainedArtifactForCompatibility(bundle)
             : bundle.compilerVersion === PREVIOUS_COMPILER_VERSION
               ? compilePreviousArtifactForCompatibility(bundle)
-              : compileWorld(bundle);
+              : bundle.compilerVersion === GOVERNANCE_COMPILER_VERSION
+                ? compileGovernanceArtifactForCompatibility(bundle)
+                : compileWorld(bundle);
         if (!compiled.artifact) {
           return { diagnostics: compiled.diagnostics, kind: 'compile_failed' } as const;
         }
@@ -560,6 +595,9 @@ export class WorldCompilationRunner {
     }
     if (job.compilerVersion === PREVIOUS_COMPILER_VERSION) {
       return createPreviousCompilerInputBundle(options);
+    }
+    if (job.compilerVersion === GOVERNANCE_COMPILER_VERSION) {
+      return createGovernanceCompilerInputBundle(options);
     }
     if (job.compilerVersion === COMPILER_VERSION) {
       return createCompilerInputBundle(options);

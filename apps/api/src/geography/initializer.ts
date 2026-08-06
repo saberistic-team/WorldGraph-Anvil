@@ -142,7 +142,7 @@ export async function initializeWorldGeography(
        id, world_id, stable_key, geom, geography_version, created_command_id
      ) values (
        $1::uuid, $2::uuid, $3,
-       ST_Multi(ST_SetSRID(ST_GeomFromText($4), 3857)),
+       extensions.ST_Multi(extensions.ST_SetSRID(extensions.ST_GeomFromText($4), 3857)),
        1, $5::uuid
      )`,
     [
@@ -163,7 +163,7 @@ export async function initializeWorldGeography(
          geography_version, created_command_id
        ) values (
          $1::uuid, $2::uuid, $3::uuid, $4, $4, $5,
-         ST_SetSRID(ST_GeomFromText($6), 3857),
+         extensions.ST_SetSRID(extensions.ST_GeomFromText($6), 3857),
          1, $7::uuid
        )`,
       [
@@ -187,7 +187,7 @@ export async function initializeWorldGeography(
          created_command_id
        ) values (
          $1::uuid, $2::uuid, $3::uuid, $4, $5,
-         ST_SetSRID(ST_GeomFromText($6), 3857),
+         extensions.ST_SetSRID(extensions.ST_GeomFromText($6), 3857),
          1, $7::uuid
        )`,
       [
@@ -209,7 +209,7 @@ export async function initializeWorldGeography(
          geom, geography_version, created_command_id
        ) values (
          $1::uuid, $2::uuid, $3, $4, $5, $6::uuid, $7::uuid,
-         ST_SetSRID(ST_GeomFromText($8), 3857),
+         extensions.ST_SetSRID(extensions.ST_GeomFromText($8), 3857),
          1, $9::uuid
        )`,
       [
@@ -233,8 +233,8 @@ export async function initializeWorldGeography(
          elevation_milli, yaw_milli_degrees, geography_version, created_command_id
        ) values (
          $1::uuid, $2::uuid, $3::uuid, $4, $5, $6,
-         ST_SetSRID(ST_GeomFromText($7), 3857),
-         ST_SetSRID(ST_GeomFromText($8), 3857),
+         extensions.ST_SetSRID(extensions.ST_GeomFromText($7), 3857),
+         extensions.ST_SetSRID(extensions.ST_GeomFromText($8), 3857),
          $9, $10, 1, $11::uuid
        )`,
       [
@@ -260,7 +260,7 @@ export async function initializeWorldGeography(
          geography_version, created_command_id
        ) values (
          $1::uuid, $2::uuid, $3, $4, $5,
-         ST_SetSRID(ST_GeomFromText($6), 3857),
+         extensions.ST_SetSRID(extensions.ST_GeomFromText($6), 3857),
          $7, 1, $8::uuid
        )`,
       [
@@ -283,7 +283,7 @@ export async function initializeWorldGeography(
          geography_version, created_command_id
        ) values (
          $1::uuid, $2::uuid, $3,
-         ST_SetSRID(ST_GeomFromText($4), 3857),
+         extensions.ST_SetSRID(extensions.ST_GeomFromText($4), 3857),
          $5, $6, $7, true, 1, $8::uuid
        )`,
       [

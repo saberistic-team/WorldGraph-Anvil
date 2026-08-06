@@ -55,16 +55,20 @@ Exact sealed M10 (`0014`) upgrades advance metadata to contract/runtime 11 and c
 - ADR 0016: PostGIS is spatial authority; scene plan and R3F are replaceable projection; inspector uses authorized APIs only.
 - Creator HTTP initialize/publish routes implement the vertical slice; they are not yet registered on the full public command bus with sealed domain-event envelopes (retained hardening).
 - Outbox invalidations use `GeographyInvalidationV1` without a domain-event FK, dispatched by the outbox worker onto Redis channel `worldgraph:geography:v1:world:<worldId>`.
+- App-role geography SQL qualifies PostGIS functions/operators as `extensions.*` because `worldgraph_app` does not put `extensions` on `search_path` (same pattern as `extensions.digest` / vector operators).
+- Activation remains READ COMMITTED with membership `FOR UPDATE` so concurrent membership writers cannot race past the pre-activation input fingerprint.
 
 ## Actual verification evidence
 
-| Gate                                                 | Result                                                                                                                                                            |
-| ---------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `pnpm check`                                         | **PASS.** Format, lint, typecheck, golden (5 lanes), 139 unit files / 989 tests, migration journal head `0015`, production builds, offline compiler CLI identity. |
-| Focused M11 upgrade-origin (`pnpm test:m11-upgrade`) | **PASS.** 1 file / 3 tests: fresh geography surface, exact `0014`→`0015` empty geography, invalid-geometry + scene-plan immutability.                             |
-| Playwright                                           | **PASS.** 94/94 including Explore desktop and 320-pixel mobile (list/map, inspector, WebGL toggle, axe).                                                          |
-| Full `pnpm test:integration`                         | Not claimed in this seal window; focused geography upgrade-origin is the recorded M11 database gate.                                                              |
-| Compose clean/retained browser/recovery              | Not re-run in this seal window; retained as operational residual before claiming production-image parity for Explore.                                             |
+| Gate                                                 | Result                                                                                                                                                             |
+| ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `pnpm check`                                         | **PASS.** Format, lint, typecheck, golden (5 lanes), 139 unit files / 989 tests, migration journal head `0015`, production builds, offline compiler CLI identity.  |
+| Focused M11 upgrade-origin (`pnpm test:m11-upgrade`) | **PASS.** 1 file / 3 tests: fresh geography surface, exact `0014`→`0015` empty geography, invalid-geometry + scene-plan immutability.                              |
+| Geography API membership/bounds                      | **PASS.** `apps/api/src/geography.integration.test.ts` (2 tests): member bbox/spawn/scene reads; non-member 404; app-role PostGIS via `extensions.` qualification. |
+| World compilation worker                             | **PASS.** 11/11 including membership-writer activation race (`COMPILATION_INPUT_CHANGED`) and retained governance `1.3.0`/artifact-4 lane with native `1.4.0`/5.   |
+| Playwright                                           | **PASS.** 94/94 including Explore desktop and 320-pixel mobile (list/map, inspector, WebGL toggle, axe).                                                           |
+| Full `pnpm test:integration`                         | Not claimed as a single aggregate green run in this seal window; M11 database/API gates above plus repaired head pins are the recorded evidence.                   |
+| Compose clean/retained browser/recovery              | Not re-run in this seal window; retained as operational residual before claiming production-image parity for Explore.                                              |
 
 ## Retained risks
 

@@ -463,9 +463,11 @@ export class PostgresWorldCompilationRepository implements WorldCompilationRepos
     for (let attempt = 0; attempt < 3; attempt += 1) {
       const client = await this.pool.connect();
       try {
-        await client.query('begin isolation level serializable');
-        // Stabilize both existing rows and the absence of new memberships before
-        // PostgreSQL takes the serializable snapshot used for activation.
+        // READ COMMITTED + SHARE table locks: wait for concurrent membership/
+        // primitive writers, then observe their committed rows. SERIALIZABLE
+        // snapshots can be assigned before a waited LOCK TABLE returns, which
+        // would miss exactly the input change this gate must reject.
+        await client.query('begin');
         const lockStarted = performance.now();
         await client.query('lock table world_memberships, primitive_versions in share mode');
         await client.query('select worldgraph_lock_world_compilation($1)', [job.worldId]);
@@ -502,12 +504,14 @@ export class PostgresWorldCompilationRepository implements WorldCompilationRepos
           return null;
         }
 
+        // FOR UPDATE waits on concurrent membership writers even if a table
+        // SHARE lock was compatible with an unexpected lock mode.
         const activeMembers = await client.query<{ role: WorldRole; user_id: string }>(
           `select user_id, role
              from world_memberships
             where world_id = $1 and status = 'active'
             order by role::text collate "C", user_id
-            for share`,
+            for update`,
           [job.worldId],
         );
         const currentMembers = activeMembers.rows
@@ -523,11 +527,11 @@ export class PostgresWorldCompilationRepository implements WorldCompilationRepos
                 ? 1
                 : 0,
           );
-        if (
-          canonicalJson(
-            currentMembers.map(({ principalKey, role }) => ({ principalKey, role })),
-          ) !== canonicalJson(bundle.activeMembers)
-        ) {
+        const currentMemberDocument = canonicalJson(
+          currentMembers.map(({ principalKey, role }) => ({ principalKey, role })),
+        );
+        const bundleMemberDocument = canonicalJson(bundle.activeMembers);
+        if (currentMemberDocument !== bundleMemberDocument) {
           throw new CompilationInputChangedError();
         }
         const primitiveVersions = await client.query<{
